@@ -1,0 +1,28 @@
+# Ignore the entire data directory
+data/
+
+# Ignore the entire tests directory
+tests/
+
+# Ignore demo Jupyter notebook
+demo_neural_networks.ipynb
+
+# Ignore Python cache files
+__pycache__/
+
+# Ignore logs
+*.log
+
+# Ignore virtual environments (if applicable)
+venv/
+
+# Ignore macOS system files
+.DS_Store
+
+# Ignore Windows system files
+Thumbs.db
+
+# DO NOT IGNORE:
+# __init__.py: necessary for Python packages
+# README.md: important for project documentation
+# requirements.txt: lists project dependencies
