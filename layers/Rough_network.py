@@ -312,7 +312,8 @@ class Rough:
         for batch_index, one_batch_error in enumerate(error_batch):
             # Compute gradient for alpha
             if self.train_alpha:
-                grad_alpha += (self.upper_output[batch_index] - self.lower_output[batch_index])
+                grad_alpha += one_batch_error.reshape((-1, 1)) * \
+                    (self.upper_output[batch_index] - self.lower_output[batch_index])
 
             # Compute upper and lower network errors
             e_max = self.alpha * one_batch_error.reshape((-1, 1))
