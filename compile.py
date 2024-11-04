@@ -1,6 +1,6 @@
 import numpy as np
-# from layers.Dense_network import Dense
-# from layers.Rough_network import Rough
+from layers.Dense_network import Dense
+from layers.Rough_network import Rough
 from layers.RBF_network import RBF
 from visualizations.plot_metrics import plot_metrics
 from IPython.display import clear_output
@@ -83,6 +83,68 @@ class compile:
         
         # Return the total count of trainable parameters
         return int(params)
+    
+    #################################################################
+
+    def summary(self) -> None:
+        """
+        Prints a detailed summary of the model's architecture, including the number of parameters (trainable
+        and non-trainable) for each layer, along with activation functions and layer types.
+        
+        Returns
+        -------
+        None
+            This method only outputs the model summary to the console.
+        """
+        # Print the title of the model summary with decorative asterisks
+        print('\n', '*' * 30, 'model summary', '*' * 30, '\n')
+        
+        # Initialize counters for the total number of trainable and all parameters in the model
+        total_n_trainable = 0
+        total_n_all = 0
+        
+        # Iterate through each layer in the model and gather information for summary
+        for index, layer in enumerate(self.model):
+            # Print layer index (1-based) and type of layer
+            print(f'layer {index+1}:', end='\n\t')
+            print(type(layer), end='\n\t')
+            
+            # Print the activation function used in the current layer
+            print('activation function:', layer.activation, end='\n\t')
+            print('batch size:', layer.batch_size, end='\n\t')
+            print('input size:', layer.input_size, end='\n\t')
+            print('output size:', layer.output_size, end='\n\t')
+            
+            # Get the number of trainable parameters for the current layer
+            n_trainable = layer.trainable_params()
+            # Accumulate the trainable parameter count to the total
+            total_n_trainable += n_trainable
+            
+            # Get the total number of parameters (trainable + non-trainable) in the current layer
+            n_all = layer.all_params()
+            # Accumulate the total parameter count
+            total_n_all += n_all
+            
+            # Print the total number of parameters in the current layer
+            print(f'number of parameters: {n_all}', end='\n\t')
+            
+            # Print the number of trainable parameters in the current layer
+            print(f'number of trainable parameters: {n_trainable}', end='\n\t')
+            
+            # Calculate and print the number of non-trainable parameters in the current layer
+            print(f'number of non trainable parameters: {n_all - n_trainable}', end='\n\t')
+            
+            # Print a separator line for clarity between layers
+            print('-' * 50)
+        
+        # Print the total number of parameters across all layers in the model
+        print(f'total number of parameters: {total_n_all}', end='\n\t')
+        
+        # Print the total number of trainable parameters across the model
+        print(f'total number of trainable parameters: {total_n_trainable}', end='\n\t')
+        
+        # Print the total number of non-trainable parameters across the model
+        print(f'total number of non trainable parameters: {total_n_all - total_n_trainable}', end='\n\t')
 
 
     #################################################################
@@ -184,10 +246,10 @@ class compile:
         if not hasattr(self, 'Optimizer'):
             self.Optimizer = method
             for layer in self.model:
-                layer.optimzer_init(optimizer=method, **kwargs)
+                layer.optimizer_init(optimizer=method, **kwargs)
         if self.Optimizer != method:
             for layer in self.model:
-                layer.optimzer_init(optimizer=method, **kwargs)
+                layer.optimizer_init(optimizer=method, **kwargs)
 
         # Placeholder to store the training output
         out_train = None

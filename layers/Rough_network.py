@@ -162,101 +162,173 @@ class Rough:
 
     #################################################################
 
-    def optimzer_init(self, optimizer='Adam', **kwargs) -> None:
+    def optimizer_init(self, optimizer: str = 'Adam', **kwargs) -> None:
+        """
+        Initializes the optimizer for updating network parameters.
+
+        Parameters:
+        -----------
+        optimizer : str, optional
+            The type of optimizer to use, default is 'Adam'.
+        **kwargs : dict, optional
+            Additional parameters for configuring the optimizer.
+
+        Returns:
+        --------
+        None
+        """
+        # Initialize the optimizer for this network layer, setting it to
+        # update parameters based on the chosen method (e.g., Adam, SGD)
+        # and any additional arguments provided (e.g., learning rate).
+        # 'self.trainable_params()' gets all parameters that need updates.
         self.Optimizer = init_optimizer(self.trainable_params(), method=optimizer, **kwargs)
 
     #################################################################
 
     def update(self, grads: np.ndarray, learning_rate: float = 1e-3) -> None:
+        """
+        Applies calculated gradients to update trainable parameters.
+
+        Parameters:
+        -----------
+        grads : np.ndarray
+            Gradients for all trainable parameters.
+        learning_rate : float, optional
+            The rate at which parameters are adjusted, default is 1e-3.
+
+        Returns:
+        --------
+        None
+        """
+        # Calculate updates for each parameter using the optimizer and provided gradients.
         deltas = self.Optimizer(grads, learning_rate)
+
+        # Initialize an index to keep track of each parameter's position within deltas.
         ind2 = 0
+
+        # Update weights if trainable
         if self.train_weights:
+            # Update upper_weight
             ind1 = ind2
             ind2 += int(np.size(self.upper_weight))
             delta_w = deltas[ind1:ind2].reshape(self.upper_weight.shape)
-            self.upper_weight -= delta_w
+            self.upper_weight -= delta_w  # Apply update
+
+            # Update lower_weight
             ind1 = ind2
             ind2 += int(np.size(self.lower_weight))
             delta_w = deltas[ind1:ind2].reshape(self.lower_weight.shape)
-            self.lower_weight -= delta_w
+            self.lower_weight -= delta_w  # Apply update
+
+        # Update biases if trainable
         if self.train_bias:
+            # Update upper_bias
             ind1 = ind2
             ind2 += np.size(self.upper_bias)
             delta_bias = deltas[ind1:ind2].reshape(self.upper_bias.shape)
-            self.upper_bias -= delta_bias
+            self.upper_bias -= delta_bias  # Apply update
+
+            # Update lower_bias
             ind1 = ind2
             ind2 += np.size(self.lower_bias)
             delta_bias = deltas[ind1:ind2].reshape(self.lower_bias.shape)
-            self.lower_bias -= delta_bias
+            self.lower_bias -= delta_bias  # Apply update
+
+        # Update blending factor if trainable
         if self.train_blending:
             ind1 = ind2
             ind2 += np.size(self.blending_factor)
             delta_blend = deltas[ind1:ind2].reshape(self.blending_factor.shape)
-            self.blending_factor -= delta_blend
+            self.blending_factor -= delta_blend  # Apply update
 
     #################################################################
 
-    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, return_error=False, return_grads=False, modify=True):
-        if return_error:
-            error_in = np.zeros(self.input.shape)  # Initialize error output
+    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, 
+                return_error: bool = False, return_grads: bool = False, modify: bool = True):
+        """
+        Backward pass for computing gradients and updating parameters.
 
-        # Initialize the gradients for weights and biases
+        Parameters:
+        -----------
+        error_batch : np.ndarray
+            Error propagated from the next layer (batch_size, output_size).
+        learning_rate : float, optional
+            Rate for updating parameters (default 1e-3).
+        return_error : bool, optional
+            If True, returns error propagated to inputs.
+        return_grads : bool, optional
+            If True, returns gradients of parameters.
+        modify : bool, optional
+            If True, applies updates based on computed gradients.
+
+        Returns:
+        --------
+        dict or np.ndarray or None
+            - {'error_in': error_in, 'gradients': grads} if both `return_error` and `return_grads` are True.
+            - `error_in` if `return_error` is True and `return_grads` is False.
+            - `gradients` if `return_grads` is True and `return_error` is False.
+        """
+        # Initialize error to propagate to previous layers if required
+        if return_error:
+            error_in = np.zeros(self.input.shape)
+
+        # Initialize gradients for weights, biases, and blending factor
         grad_w_up = np.zeros(self.upper_weight.shape) if self.train_weights else None
         grad_w_low = np.zeros(self.lower_weight.shape) if self.train_weights else None
         grad_bias_up = np.zeros(self.upper_bias.shape) if self.train_bias else None
         grad_bias_low = np.zeros(self.lower_bias.shape) if self.train_bias else None
         grad_alpha = np.zeros(self.blending_factor.shape) if self.train_blending else None
 
-        # Loop through each batch and compute sensitivities
+        # Iterate over each error in the batch to calculate gradients
         for batch_index, one_batch_error in enumerate(error_batch):
-            # Compute gradient for alpha
+            # Calculate gradient of blending factor (alpha) if trainable
             if self.train_blending:
                 grad_alpha += one_batch_error.reshape((-1, 1)) * \
-                    (self.upper_output[batch_index] - self.lower_output[batch_index])
+                            (self.upper_output[batch_index] - self.lower_output[batch_index])
 
-            # Compute upper and lower network errors
+            # Compute propagated error for upper and lower networks
             e_max = self.blending_factor * one_batch_error.reshape((-1, 1))
             e_min = (1 - self.blending_factor) * one_batch_error.reshape((-1, 1))
 
+            # Error allocation based on network outputs and blending factor
             e_upper = e_max * np.logical_not(self.minmax_reverse_stat[batch_index].reshape((-1, 1))) + \
-                      e_min * self.minmax_reverse_stat[batch_index].reshape((-1, 1))
+                    e_min * self.minmax_reverse_stat[batch_index].reshape((-1, 1))
             e_lower = e_min * np.logical_not(self.minmax_reverse_stat[batch_index].reshape((-1, 1))) + \
-                      e_max * self.minmax_reverse_stat[batch_index].reshape((-1, 1))
+                    e_max * self.minmax_reverse_stat[batch_index].reshape((-1, 1))
 
-            # Compute sensitivity of upper and lower networks
+            # Sensitivity of each network's output w.r.t inputs using activation derivatives
             Fprime_up = net2Fprime(self.upper_net[batch_index], self.activation, self.alpha_activation)
             Fprime_low = net2Fprime(self.lower_net[batch_index], self.activation, self.alpha_activation)
 
-            # Apply sensitivity (deltas)
+            # Calculate deltas or sensitivities for weights and biases
             sensitivity_up = e_upper.reshape((-1, 1)) * Fprime_up
             sensitivity_low = e_lower.reshape((-1, 1)) * Fprime_low
 
-            # Compute gradients for weights and biases
+            # Update gradients for weights if trainable
             if self.train_weights:
                 grad_w_up += np.outer(sensitivity_up.ravel(), self.input[batch_index].ravel())
                 grad_w_low += np.outer(sensitivity_low.ravel(), self.input[batch_index].ravel())
 
+            # Update gradients for biases if trainable
             if self.train_bias:
                 grad_bias_up += sensitivity_up
                 grad_bias_low += sensitivity_low
 
-            # Propagate error back to previous layer
+            # Propagate error to previous layer inputs if return_error is True
             if return_error:
                 error_in[batch_index] = np.ravel(self.upper_weight.T @ sensitivity_up + self.lower_weight.T @ sensitivity_low)
 
-        # Normalize gradients
+        # Average gradients over batch size
         if self.train_weights:
             grad_w_up /= error_batch.shape[0]
             grad_w_low /= error_batch.shape[0]
-
-        if self.use_bias:
+        if self.train_bias:
             grad_bias_up /= error_batch.shape[0]
             grad_bias_low /= error_batch.shape[0]
-
         if self.train_blending:
             grad_alpha /= error_batch.shape[0]
 
-        # Update the parameters using the computed gradients
+        # Prepare gradients for update if they exist
         grads = None if (grad_w_up is None) and (grad_bias_up is None) else np.array([]).reshape((-1,1))
         if grads is not None:
             if grad_w_up is not None:
@@ -267,10 +339,11 @@ class Rough:
                 grads = np.concatenate((grads, grad_bias_low.reshape((-1,1))))
             if grad_alpha is not None:
                 grads = np.concatenate((grads, grad_alpha.reshape((-1,1))))
+        # Apply updates if modify is True
         if modify:
             self.update(grads, learning_rate=learning_rate)
 
-        # Return parameters gradients and gradient with respect to input if needed
+        # Return requested outputs based on function arguments
         if return_error and return_grads:
             return {'error_in': error_in, 'gradients': grads}
         elif return_error:

@@ -148,53 +148,118 @@ class flexible_Dense:
 
     #################################################################
 
-    def optimzer_init(self, optimizer='Adam', **kwargs) -> None:
+    def optimizer_init(self, optimizer: str = 'Adam', **kwargs) -> None:
+        """
+        Initializes the optimizer for the layer using the specified method.
+
+        Parameters:
+        -----------
+        optimizer : str, optional
+            The optimization algorithm to use (default is 'Adam').
+        **kwargs : dict, optional
+            Additional parameters to configure the optimizer.
+
+        Returns:
+        --------
+        None
+        """
+        # Initialize optimizer with given parameters and assign to layer's optimizer attribute
         self.Optimizer = init_optimizer(self.trainable_params(), method=optimizer, **kwargs)
 
     #################################################################
 
     def update(self, grads: np.ndarray, learning_rate: float = 1e-3) -> None:
+        """
+        Updates the layer's trainable parameters (weights, biases, alpha, lambda) based on gradients.
+
+        Parameters:
+        -----------
+        grads : np.ndarray
+            Gradients of the loss with respect to each trainable parameter.
+        learning_rate : float, optional
+            Step size for the optimizer (default is 1e-3).
+
+        Returns:
+        --------
+        None
+        """
+        # Compute parameter update deltas from optimizer based on gradients and learning rate
         deltas = self.Optimizer(grads, learning_rate)
+
+        # Initialize parameter update index
         ind2 = 0
+
+        # Update weights if trainable
         if self.train_weights:
-            ind1 = ind2
-            ind2 += int(np.size(self.weight))
+            ind1 = ind2  # Start index for weights
+            ind2 += int(np.size(self.weight))  # End index for weights
             delta_w = deltas[ind1:ind2].reshape(self.weight.shape)
-            self.weight -= delta_w
+            self.weight -= delta_w  # Update weights
+
+        # Update bias if trainable
         if self.train_bias:
-            ind1 = ind2
-            ind2 += np.size(self.bias)
+            ind1 = ind2  # Start index for biases
+            ind2 += np.size(self.bias)  # End index for biases
             delta_bias = deltas[ind1:ind2].reshape(self.bias.shape)
-            self.bias -= delta_bias
+            self.bias -= delta_bias  # Update bias
+
+        # Update alpha parameter if trainable
         if self.train_alpha:
-            ind1 = ind2
-            ind2 += np.size(self.alpha)
+            ind1 = ind2  # Start index for alpha
+            ind2 += np.size(self.alpha)  # End index for alpha
             delta_alpha = deltas[ind1:ind2].reshape(self.alpha.shape)
-            self.alpha -= delta_alpha
+            self.alpha -= delta_alpha  # Update alpha
+
+        # Update lambda parameter if trainable
         if self.train_lambda:
-            ind1 = ind2
-            ind2 += np.size(self.lambda_param)
+            ind1 = ind2  # Start index for lambda
+            ind2 += np.size(self.lambda_param)  # End index for lambda
             delta_lambda = deltas[ind1:ind2].reshape(self.lambda_param.shape)
-            self.lambda_param -= delta_lambda
+            self.lambda_param -= delta_lambda  # Update lambda
 
     #################################################################
 
-    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, return_error=False, return_grads=False, modify=True):
-        # Initialize the output error gradients array
+    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, 
+                return_error: bool = False, return_grads: bool = False, modify: bool = True):
+        """
+        Calculates gradients and updates the parameters during backpropagation.
+
+        Parameters:
+        -----------
+        error_batch : np.ndarray
+            Array of errors from the next layer, shape (batch_size, output_size).
+        learning_rate : float, optional
+            Learning rate for parameter updates (default is 1e-3).
+        return_error : bool, optional
+            If True, returns error gradients with respect to inputs (default is False).
+        return_grads : bool, optional
+            If True, returns computed gradients of parameters (default is False).
+        modify : bool, optional
+            If True, updates parameters using calculated gradients (default is True).
+
+        Returns:
+        --------
+        dict or np.ndarray or None
+            Returns dictionary with `error_in` and `gradients` if both `return_error` and `return_grads` are True.
+            Returns `error_in` if `return_error` is True and `return_grads` is False.
+            Returns `gradients` if `return_grads` is True and `return_error` is False.
+        """
+        # Initialize error gradient for inputs if return_error is True
         if return_error:
             error_in = np.zeros(self.input.shape)
 
-        # Initialize gradients
+        # Initialize gradients for weights, biases, alpha, and lambda parameters
         grad_w = np.zeros(self.weight.shape) if self.train_weights else None
         grad_bias = np.zeros(self.bias.shape) if self.train_bias else None
         grad_alpha = np.zeros(self.alpha.shape) if self.train_alpha else None
         grad_lambda = np.zeros(self.lambda_param.shape) if self.train_lambda else None
 
-        # Compute gradients for each batch sample
+        # Process each error in the batch
         for batch_index, one_batch_error in enumerate(error_batch):
-            # Calculate derivatives
+            # Calculate derivatives for alpha and lambda if required
             if self.train_alpha or self.train_lambda:
                 Fstar = net2Fstar(self.net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
+                # Update alpha and lambda gradients based on activation function
                 if self.activation in ['selu', 'elu']:
                     if self.train_alpha:
                         grad_alpha += one_batch_error.reshape((-1, 1)) * Fstar[0]
@@ -204,22 +269,25 @@ class flexible_Dense:
                     if self.train_alpha:
                         grad_alpha += one_batch_error.reshape((-1, 1)) * Fstar
 
+            # Compute derivative of the activation function
             Fprime = net2Fprime(self.net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 
-            # Compute sensitivity
+            # Calculate sensitivity as the product of the error and activation derivative
             sensitivity = one_batch_error.reshape((-1, 1)) * Fprime
 
-            # Compute weight gradient
+            # Accumulate weight gradient if trainable
             if self.train_weights:
                 grad_w += np.outer(sensitivity.ravel(), self.input[batch_index].ravel())
+
+            # Accumulate bias gradient if trainable
             if self.train_bias:
                 grad_bias += sensitivity
 
-            # Backpropagate error
+            # Compute error gradient w.r.t input if return_error is True
             if return_error:
                 error_in[batch_index] = np.ravel(self.weight.T @ sensitivity)
 
-        # Average gradients across batch
+        # Average gradients over batch size
         if self.train_weights:
             grad_w /= error_batch.shape[0]
         if self.train_alpha:
@@ -229,8 +297,8 @@ class flexible_Dense:
         if self.train_lambda:
             grad_lambda /= error_batch.shape[0]
 
-        # Update the parameters using the computed gradients
-        grads = None if (grad_w is None) and (grad_bias is None) and (grad_alpha is None) and (grad_alpha is None) else \
+        # Collect gradients into a single array if not None
+        grads = None if (grad_w is None) and (grad_bias is None) and (grad_alpha is None) and (grad_lambda is None) else \
             np.array([]).reshape((-1,1))
         if grads is not None:
             if grad_w is not None:
@@ -241,10 +309,12 @@ class flexible_Dense:
                 grads = np.concatenate((grads, grad_alpha.reshape((-1,1))))
             if grad_lambda is not None:
                 grads = np.concatenate((grads, grad_lambda.reshape((-1,1))))
+
+        # Update parameters if modify is True
         if modify:
             self.update(grads, learning_rate=learning_rate)
 
-        # Return parameters gradients and gradient with respect to input if needed
+        # Return error gradients or parameter gradients based on flags
         if return_error and return_grads:
             return {'error_in': error_in, 'gradients': grads}
         elif return_error:

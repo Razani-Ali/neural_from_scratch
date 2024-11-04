@@ -147,73 +147,145 @@ class RBF:
         return self.output[:input.shape[0]].reshape((-1, self.output_size))
 
     #################################################################
-    
-    def optimzer_init(self, optimizer='Adam', **kwargs) -> None:
+
+    def optimizer_init(self, optimizer: str = 'Adam', **kwargs) -> None:
+        """
+        Initializes the optimizer for the layer with specified settings.
+
+        Parameters:
+        -----------
+        optimizer : str, optional
+            Name of the optimizer to be used (default is 'Adam').
+        **kwargs : dict, optional
+            Additional parameters for configuring the optimizer.
+
+        Returns:
+        --------
+        None
+        """
+        # Initialize the optimizer by calling an external function 'init_optimizer'
+        # The optimizer is assigned based on the specified method and settings.
+        # self.trainable_params() retrieves all trainable parameters for optimization.
         self.Optimizer = init_optimizer(self.trainable_params(), method=optimizer, **kwargs)
 
     #################################################################
 
     def update(self, grads: np.ndarray, learning_rate: float = 1e-3) -> None:
+        """
+        Updates the trainable parameters (center and variance) based on gradients.
+
+        Parameters:
+        -----------
+        grads : np.ndarray
+            Gradients of the loss function with respect to each parameter.
+        learning_rate : float, optional
+            Step size for adjusting parameters (default is 1e-3).
+
+        Returns:
+        --------
+        None
+        """
+        # Calculate the deltas for each parameter using the optimizer and gradients
         deltas = self.Optimizer(grads, learning_rate)
+        
+        # Initialize the starting index for parameter updates
         ind2 = 0
+
+        # Update the center parameter if trainable
         if self.train_center:
-            ind1 = ind2
-            ind2 += int(np.size(self.center))
+            ind1 = ind2  # Starting index for center gradients
+            ind2 += int(np.size(self.center))  # Update ending index based on center's size
+            # Reshape deltas to match center's shape and apply the update
             delta_center = deltas[ind1:ind2].reshape(self.center.shape)
-            self.center -= delta_center
+            self.center -= delta_center  # Update center parameter
+
+        # Update the variance parameter if trainable
         if self.train_var:
-            ind1 = ind2
-            ind2 += np.size(self.var)
+            ind1 = ind2  # Starting index for variance gradients
+            ind2 += np.size(self.var)  # Update ending index based on variance's size
+            # Reshape deltas to match variance's shape and apply the update
             delta_var = deltas[ind1:ind2].reshape(self.var.shape)
-            self.var -= delta_var
+            self.var -= delta_var  # Update variance parameter
 
     #################################################################
 
-    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, return_error=False, return_grads=False, modify=True):
-        # Initialize arrays for output error and gradients
+    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, 
+                return_error: bool = False, return_grads: bool = False, modify: bool = True):
+        """
+        Computes gradients and updates parameters during backpropagation.
+
+        Parameters:
+        -----------
+        error_batch : np.ndarray
+            Error from the next layer, shape (batch_size, output_size).
+        learning_rate : float, optional
+            Step size for parameter updates (default is 1e-3).
+        return_error : bool, optional
+            If True, returns the error propagated back to inputs (default is False).
+        return_grads : bool, optional
+            If True, returns computed gradients of parameters (default is False).
+        modify : bool, optional
+            If True, updates parameters based on gradients (default is True).
+
+        Returns:
+        --------
+        dict or np.ndarray or None
+            - Returns {'error_in': error_in, 'gradients': grads} if both `return_error` and `return_grads` are True.
+            - Returns `error_in` if `return_error` is True and `return_grads` is False.
+            - Returns `gradients` if `return_grads` is True and `return_error` is False.
+        """
+        # Initialize error gradient array for inputs if needed
         if return_error:
             error_in = np.zeros(self.input.shape)
         
-        # Initialize the gradients for weights and biases
+        # Initialize gradients for center and variance if they are trainable
         grad_cen = np.zeros(self.center.shape) if self.train_center else None
         grad_var = np.zeros(self.var.shape) if self.train_var else None
 
-        # Iterate over each batch and calculate gradients
+        # Iterate over each error in the batch
         for batch_index, one_batch_error in enumerate(error_batch):
 
+            # Compute gradient with respect to the center if it is trainable
             if self.train_center:
-                # Gradient w.r.t. centers
-                grad_cen = np.diag(one_batch_error.ravel() * self.output[batch_index].ravel() * self.var.ravel() ** -2) @\
+                # Calculate the gradient of the error with respect to the center
+                # This uses the partial derivative formula for RBF centers
+                grad_cen = np.diag(one_batch_error.ravel() * self.output[batch_index].ravel() * self.var.ravel() ** -2) @ \
                             (np.repeat(self.input[batch_index].reshape(1, -1), self.output_size, axis=0) - self.center)
-                
-            if self.train_var:
-                # Gradient w.r.t. variances
-                grad_var += (one_batch_error.ravel() * self.net[batch_index].ravel() ** 2 *\
-                    self.var.ravel() ** -3 * self.output[batch_index].ravel()).reshape((-1, 1))
             
-            # Error backpropagated to the input
+            # Compute gradient with respect to the variance if it is trainable
+            if self.train_var:
+                # Calculate the gradient of the error with respect to the variance
+                # This uses the partial derivative formula for RBF variances
+                grad_var += (one_batch_error.ravel() * self.net[batch_index].ravel() ** 2 *
+                            self.var.ravel() ** -3 * self.output[batch_index].ravel()).reshape((-1, 1))
+            
+            # Calculate the error propagated back to the input if required
             if return_error:
+                # Calculate sensitivity for input error propagation
                 error_x = (one_batch_error.ravel() * self.output[batch_index].ravel() * self.var.ravel() ** -2).reshape((-1, 1))
-                error_in[batch_index] = (np.ones((self.input_size, self.output_size)) @ error_x).ravel() *\
-                    (np.sum(2 * self.center, axis=0).ravel() - 4 * self.input[batch_index].ravel())
+                # Aggregate the propagated error based on the input dimensions
+                error_in[batch_index] = (np.ones((self.input_size, self.output_size)) @ error_x).ravel() * \
+                                        (np.sum(2 * self.center, axis=0).ravel() - 4 * self.input[batch_index].ravel())
 
-        # Normalize gradients by batch size
+        # Normalize the gradients by the batch size to get average gradients
         if self.train_center:
             grad_cen /= error_batch.shape[0]
         if self.train_var:
             grad_var /= error_batch.shape[0]
 
-        # Update the parameters using the computed gradients
-        grads = None if (grad_cen is None) and (grad_var is None) else np.array([]).reshape((-1,1))
+        # Combine gradients into a single array if there are gradients to be computed
+        grads = None if (grad_cen is None) and (grad_var is None) else np.array([]).reshape((-1, 1))
         if grads is not None:
             if grad_cen is not None:
-                grads = np.concatenate((grads, grad_cen.reshape((-1,1))))
+                grads = np.concatenate((grads, grad_cen.reshape((-1, 1))))  # Append center gradients
             if grad_var is not None:
-                grads = np.concatenate((grads, grad_var.reshape((-1,1))))
+                grads = np.concatenate((grads, grad_var.reshape((-1, 1))))  # Append variance gradients
+
+        # Apply parameter updates using the computed gradients if modify is True
         if modify:
             self.update(grads, learning_rate=learning_rate)
 
-        # Return parameters gradients and gradient with respect to input if needed
+        # Return error gradients or parameter gradients based on function flags
         if return_error and return_grads:
             return {'error_in': error_in, 'gradients': grads}
         elif return_error:
