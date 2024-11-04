@@ -1,6 +1,7 @@
 import numpy as np
 from activations.flexible_activation_functions import net2out, net2Fprime, net2Fstar
 from initializers.weight_initializer import Dense_weight_init
+from optimizers.set_optimizer import init_optimizer
 
 
 class flexible_Dense:
@@ -16,6 +17,10 @@ class flexible_Dense:
     - activation (str): Activation function to use. Options are 'leaky_relu', 'selu', 'elu', 'sigmoid', 'tanh'.
     - alpha (float, optional): Parameter for activation functions that require an alpha value.
     - lambda_ (float, optional): Scaling factor, required for 'selu' and 'elu'.
+    - train_weights (bool): Whether to train weights or not
+    - train_bias (bool): Whether to train bias or not
+    - train_alpha (bool): Whether to train alpha or not
+    - train_lambda (bool): Whether to train lambda or not
     - weights_init_method (str): Weight initialization method (e.g., 'he' or 'xavier').
     - weight_distribution (str): Distribution of weights ('normal' or 'uniform').
     - orthogonal_scale_factor (float): Scale factor for orthogonal initialization.
@@ -31,7 +36,9 @@ class flexible_Dense:
     """
 
     def __init__(self, input_size: int, output_size: int, use_bias: bool = True, batch_size: int = 32, 
-                 activation: str = 'leaky_relu', alpha: float = None, lambda_=None, weights_init_method: str = 'he', 
+                 activation: str = 'leaky_relu', alpha: float = None, lambda_=None,
+                 train_weights: bool = True, train_bias: bool = True, train_alpha: bool = True, train_lambda: bool = True,
+                 weights_init_method: str = 'he', 
                  weight_distribution: str = 'normal', orthogonal_scale_factor: float = 1.0, 
                  weights_uniform_range: tuple = None):
         self.output_size = output_size
@@ -39,6 +46,10 @@ class flexible_Dense:
         self.batch_size = batch_size
         self.use_bias = use_bias
         self.activation = activation
+        self.train_weights = train_weights
+        self.train_alpha = train_alpha
+        self.train_bias = False if use_bias is False else train_bias
+        self.train_lambda = False if (activation != 'selu') and (activation != 'elu') else train_lambda
 
         # Initialize weights based on the chosen initialization method and distribution
         self.weight = Dense_weight_init(input_size, output_size, method=weights_init_method, 
@@ -72,7 +83,28 @@ class flexible_Dense:
         Returns:
         - int: Number of trainable parameters.
         """
-        params = np.size(self.weight) + np.size(self.alpha)
+        params = 0
+        if self.train_weights:
+            params += np.size(self.weight)
+        if self.train_bias:
+            params += np.size(self.bias)
+        if self.train_alpha:
+            params += np.size(self.alpha)
+        if self.train_lambda:
+        #if self.activation in ['selu', 'elu']:
+            params += np.size(self.lambda_param)
+        return params
+    
+    #################################################################
+
+    def all_params(self) -> int:
+        """
+        Returns the total number of parameters in the layer.
+
+        Returns:
+        - int: Number of parameters.
+        """
+        params = np.size(self.alpha) + np.size(self.weight)
         if self.use_bias:
             params += np.size(self.bias)
         if self.activation in ['selu', 'elu']:
@@ -116,135 +148,61 @@ class flexible_Dense:
 
     #################################################################
 
-    def Adam_init(self):
-        """
-        Initializes the Adam optimizer's moment variables for each parameter.
-        """
-        self.weight_mt = np.zeros(self.weight.shape)
-        self.weight_vt = np.zeros(self.weight.shape)
-        self.t = 0  # Timestep
-
-        self.alpha_mt = np.zeros(self.alpha.shape)
-        self.alpha_vt = np.zeros(self.alpha.shape)
-
-        if self.use_bias:
-            self.bias_mt = np.zeros(self.bias.shape)
-            self.bias_vt = np.zeros(self.bias.shape)
-
-        if self.activation in ['selu', 'elu']:
-            self.lambda_mt = np.zeros(self.lambda_param.shape)
-            self.lambda_vt = np.zeros(self.lambda_param.shape)
+    def optimzer_init(self, optimizer='Adam', **kwargs) -> None:
+        self.Optimizer = init_optimizer(self.trainable_params(), method=optimizer, **kwargs)
 
     #################################################################
 
-    def update(self, grad_w: np.ndarray, grad_bias: np.ndarray, grad_alpha: np.ndarray, grad_lambda: np.ndarray, 
-               method: str = 'Adam', learning_rate: float = 1e-3, bias_learning_rate: float = 2e-4, 
-               adam_beta1: float = 0.9, adam_beta2: float = 0.99):
-        """
-        Updates the model parameters using either Adam or gradient descent.
-
-        Parameters:
-        - grad_w (np.ndarray): Gradient of the weights.
-        - grad_bias (np.ndarray): Gradient of the bias.
-        - grad_alpha (np.ndarray): Gradient of alpha parameter.
-        - grad_lambda (np.ndarray): Gradient of lambda parameter.
-        - method (str): Optimization method ('Adam' or 'gradient_descent').
-        - learning_rate (float): Learning rate for weights.
-        - bias_learning_rate (float): Learning rate for bias and additional parameters.
-        - adam_beta1 (float): Beta1 parameter for Adam.
-        - adam_beta2 (float): Beta2 parameter for Adam.
-        """
-        if method == 'Adam':
-            # Adam updates for weights
-            eps = 1e-7
-            self.t += 1
-
-            # Update weight moments and compute weight delta
-            self.weight_mt = adam_beta1 * self.weight_mt + (1 - adam_beta1) * grad_w
-            self.weight_vt = adam_beta2 * self.weight_vt + (1 - adam_beta2) * np.square(grad_w)
-            m_hat_w = self.weight_mt / (1 - adam_beta1 ** self.t)
-            v_hat_w = self.weight_vt / (1 - adam_beta2 ** self.t)
-            delta_w = learning_rate * m_hat_w / (np.sqrt(v_hat_w) + eps)
-
-            # Update alpha moments and compute alpha delta
-            self.alpha_mt = adam_beta1 * self.alpha_mt + (1 - adam_beta1) * grad_alpha
-            self.alpha_vt = adam_beta2 * self.alpha_vt + (1 - adam_beta2) * np.square(grad_alpha)
-            m_hat_alpha = self.alpha_mt / (1 - adam_beta1 ** self.t)
-            v_hat_alpha = self.alpha_vt / (1 - adam_beta2 ** self.t)
-            delta_alpha = bias_learning_rate * m_hat_alpha / (np.sqrt(v_hat_alpha) + eps)
-
-            # Update bias moments if bias is used
-            if self.use_bias:
-                self.bias_mt = adam_beta1 * self.bias_mt + (1 - adam_beta1) * grad_bias
-                self.bias_vt = adam_beta2 * self.bias_vt + (1 - adam_beta2) * np.square(grad_bias)
-                m_hat_bias = self.bias_mt / (1 - adam_beta1 ** self.t)
-                v_hat_bias = self.bias_vt / (1 - adam_beta2 ** self.t)
-                delta_bias = bias_learning_rate * m_hat_bias / (np.sqrt(v_hat_bias) + eps)
-
-            # Update lambda moments for SELU or ELU
-            if self.activation in ['selu', 'elu']:
-                self.lambda_mt = adam_beta1 * self.lambda_mt + (1 - adam_beta1) * grad_lambda
-                self.lambda_vt = adam_beta2 * self.lambda_vt + (1 - adam_beta2) * np.square(grad_lambda)
-                m_hat_lambda = self.lambda_mt / (1 - adam_beta1 ** self.t)
-                v_hat_lambda = self.lambda_vt / (1 - adam_beta2 ** self.t)
-                delta_lambda = bias_learning_rate * m_hat_lambda / (np.sqrt(v_hat_lambda) + eps)
-        else:
-            # Gradient descent updates
-            delta_w = learning_rate * grad_w
-            delta_alpha = bias_learning_rate * grad_alpha
-            if self.use_bias:
-                delta_bias = bias_learning_rate * grad_bias
-            if self.activation in ['selu', 'elu']:
-                delta_lambda = bias_learning_rate * grad_lambda
-
-        # Apply updates
-        self.weight -= delta_w
-        self.alpha -= delta_alpha
-        if self.use_bias:
+    def update(self, grads: np.ndarray, learning_rate: float = 1e-3) -> None:
+        deltas = self.Optimizer(grads, learning_rate)
+        ind2 = 0
+        if self.train_weights:
+            ind1 = ind2
+            ind2 += int(np.size(self.weight))
+            delta_w = deltas[ind1:ind2].reshape(self.weight.shape)
+            self.weight -= delta_w
+        if self.train_bias:
+            ind1 = ind2
+            ind2 += np.size(self.bias)
+            delta_bias = deltas[ind1:ind2].reshape(self.bias.shape)
             self.bias -= delta_bias
-        if self.activation in ['selu', 'elu']:
+        if self.train_alpha:
+            ind1 = ind2
+            ind2 += np.size(self.alpha)
+            delta_alpha = deltas[ind1:ind2].reshape(self.alpha.shape)
+            self.alpha -= delta_alpha
+        if self.train_lambda:
+            ind1 = ind2
+            ind2 += np.size(self.lambda_param)
+            delta_lambda = deltas[ind1:ind2].reshape(self.lambda_param.shape)
             self.lambda_param -= delta_lambda
 
     #################################################################
 
-    def backward(self, error_batch: np.ndarray, method: str = 'Adam', 
-                 learning_rate: float = 1e-3, bias_learning_rate: float = 2e-4, 
-                 adam_beta1: float = 0.9, adam_beta2: float = 0.99) -> np.ndarray:
-        """
-        Computes gradients and propagates error backward.
-
-        Parameters:
-        - error_batch (np.ndarray): Batch of errors.
-        - method (str): Optimization method ('Adam' or 'gradient_descent').
-        - learning_rate (float): Learning rate for weights.
-        - bias_learning_rate (float): Learning rate for bias and additional parameters.
-        - adam_beta1 (float): Beta1 parameter for Adam.
-        - adam_beta2 (float): Beta2 parameter for Adam.
-
-        Returns:
-        - np.ndarray: Output error propagated to previous layer.
-        """
-        error_out = np.zeros(self.input.shape)
+    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, return_error=False, return_grads=False, modify=True):
+        # Initialize the output error gradients array
+        if return_error:
+            error_in = np.zeros(self.input.shape)
 
         # Initialize gradients
-        grad_w = np.zeros(self.weight.shape)
-        grad_alpha = np.zeros(self.alpha.shape)
-        grad_lambda = None
-        grad_bias = None
-        if self.use_bias:
-            grad_bias = np.zeros(self.bias.shape)
-        if self.activation in ['selu', 'elu']:
-            grad_lambda = np.zeros(self.lambda_param.shape)
+        grad_w = np.zeros(self.weight.shape) if self.train_weights else None
+        grad_bias = np.zeros(self.bias.shape) if self.train_bias else None
+        grad_alpha = np.zeros(self.alpha.shape) if self.train_alpha else None
+        grad_lambda = np.zeros(self.lambda_param.shape) if self.train_lambda else None
 
         # Compute gradients for each batch sample
         for batch_index, one_batch_error in enumerate(error_batch):
             # Calculate derivatives
-            Fstar = net2Fstar(self.net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
-            if self.activation in ['selu', 'elu']:
-                grad_alpha += one_batch_error.reshape((-1, 1)) * Fstar[0]
-                grad_lambda += one_batch_error.reshape((-1, 1)) * Fstar[1]
-            else:
-                grad_alpha += one_batch_error.reshape((-1, 1)) * Fstar
+            if self.train_alpha or self.train_lambda:
+                Fstar = net2Fstar(self.net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
+                if self.activation in ['selu', 'elu']:
+                    if self.train_alpha:
+                        grad_alpha += one_batch_error.reshape((-1, 1)) * Fstar[0]
+                    if self.train_lambda:
+                        grad_lambda += one_batch_error.reshape((-1, 1)) * Fstar[1]
+                else:
+                    if self.train_alpha:
+                        grad_alpha += one_batch_error.reshape((-1, 1)) * Fstar
 
             Fprime = net2Fprime(self.net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 
@@ -252,23 +210,44 @@ class flexible_Dense:
             sensitivity = one_batch_error.reshape((-1, 1)) * Fprime
 
             # Compute weight gradient
-            grad_w += np.outer(sensitivity.ravel(), self.input[batch_index].ravel())
-            if self.use_bias:
+            if self.train_weights:
+                grad_w += np.outer(sensitivity.ravel(), self.input[batch_index].ravel())
+            if self.train_bias:
                 grad_bias += sensitivity
 
             # Backpropagate error
-            error_out[batch_index] = np.ravel(self.weight.T @ sensitivity)
+            if return_error:
+                error_in[batch_index] = np.ravel(self.weight.T @ sensitivity)
 
         # Average gradients across batch
-        grad_w /= error_batch.shape[0]
-        grad_alpha /= error_batch.shape[0]
-        if self.use_bias:
+        if self.train_weights:
+            grad_w /= error_batch.shape[0]
+        if self.train_alpha:
+            grad_alpha /= error_batch.shape[0]
+        if self.train_bias:
             grad_bias /= error_batch.shape[0]
-        if self.activation in ['selu', 'elu']:
+        if self.train_lambda:
             grad_lambda /= error_batch.shape[0]
 
-        # Update parameters
-        self.update(grad_w, grad_bias, grad_alpha, grad_lambda, method=method, learning_rate=learning_rate,
-                    bias_learning_rate=bias_learning_rate, adam_beta1=adam_beta1, adam_beta2=adam_beta2)
+        # Update the parameters using the computed gradients
+        grads = None if (grad_w is None) and (grad_bias is None) and (grad_alpha is None) and (grad_alpha is None) else \
+            np.array([]).reshape((-1,1))
+        if grads is not None:
+            if grad_w is not None:
+                grads = np.concatenate((grads, grad_w.reshape((-1,1))))
+            if grad_bias is not None:
+                grads = np.concatenate((grads, grad_bias.reshape((-1,1))))
+            if grad_alpha is not None:
+                grads = np.concatenate((grads, grad_alpha.reshape((-1,1))))
+            if grad_lambda is not None:
+                grads = np.concatenate((grads, grad_lambda.reshape((-1,1))))
+        if modify:
+            self.update(grads, learning_rate=learning_rate)
 
-        return error_out
+        # Return parameters gradients and gradient with respect to input if needed
+        if return_error and return_grads:
+            return {'error_in': error_in, 'gradients': grads}
+        elif return_error:
+            return error_in
+        elif return_grads:
+            return grads

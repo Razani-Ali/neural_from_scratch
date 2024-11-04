@@ -1,6 +1,7 @@
 import numpy as np
 from activations.activation_functions import net2out, net2Fprime
 from initializers.weight_initializer import Dense_weight_init
+from optimizers.set_optimizer import init_optimizer
 
 
 class Rough:
@@ -18,19 +19,23 @@ class Rough:
         Whether to use bias in the upper and lower networks (default is True).
     batch_size : int, optional
         The number of samples per batch (default is 32).
+    train_bias: bool, optional
+        Whether to train bias if use_bias or not
+    train_weights: bool, optional
+        Whether to train weights or not
+    train_blending : bool, optional
+        If True, blending factor or weight of average will be trained (default is False).
     activation : str, optional
         Activation function to use (default is 'sigmoid'). Other options include 'relu', 'tanh', etc.
     alpha_acti : float, optional
         A scaling parameter for the activation function (default is None).
     weights_uniform_range : tuple, optional
         The range for initializing weights uniformly (default is (-1, 1)).
-    train_alpha : bool, optional
-        If True, alpha parameter will be trained (default is False).
     """
 
-    def __init__(self, input_size: int, output_size: int, use_bias: bool = True, batch_size: int = 32, 
-                 activation: str = 'sigmoid', alpha_acti: float = None, weights_uniform_range: tuple = (-1, 1),
-                 train_alpha: bool = False):
+    def __init__(self, input_size: int, output_size: int, use_bias: bool = True, batch_size: int = 32,
+                 train_weights: bool = True, train_bias: bool = True, train_blending: bool = False,
+                 activation: str = 'sigmoid', alpha_acti: float = None, weights_uniform_range: tuple = (-1, 1)):
 
         self.output_size = output_size  # Number of output neurons
         self.input_size = input_size  # Number of input neurons/features
@@ -38,6 +43,10 @@ class Rough:
         self.use_bias = use_bias  # Whether to use bias
         self.activation = activation  # Activation function to use
         self.alpha_activation = alpha_acti  # Alpha activation scaling parameter
+        self.train_weights = train_weights
+        self.train_bias = False if use_bias is False else train_bias
+        self.train_blending = train_blending
+
 
         # Split weight initialization ranges into upper and lower halves
         middle = (weights_uniform_range[0] + weights_uniform_range[1]) / 2
@@ -54,8 +63,7 @@ class Rough:
             self.lower_bias = np.zeros((output_size, 1))
 
         # Initialize alpha (blend factor between upper and lower networks)
-        self.alpha = np.zeros((output_size, 1)) + 0.5
-        self.train_alpha = train_alpha
+        self.blending_factor = np.zeros((output_size, 1)) + 0.5
 
         # Initialize network outputs for upper and lower nets
         self.upper_net = np.zeros((batch_size, output_size, 1))
@@ -76,12 +84,26 @@ class Rough:
         Returns the number of trainable parameters in the model.
         This includes both weights, biases (if enabled), and alpha (if trainable).
         """
-        params = np.size(self.upper_weight) * 2  # We have both upper and lower weights
+        params = 0
+        if self.train_weights:
+            params += np.size(self.upper_weight) * 2  # We have both upper and lower weights
+        if self.train_bias:
+            params += np.size(self.upper_bias) * 2  # Add bias parameters if enabled
+        if self.train_blending:
+            params += np.size(self.blending_factor)  # Add alpha parameters if trainable
 
+        return int(params)
+
+    #################################################################
+
+    def all_params(self) -> int:
+        """
+        Returns the number of parameters in the model.
+        This includes both weights, biases (if enabled), and alpha (if trainable).
+        """
+        params = np.size(self.upper_weight) * 2 + np.size(self.blending_factor)
         if self.use_bias:
             params += np.size(self.upper_bias) * 2  # Add bias parameters if enabled
-        if self.train_alpha:
-            params += np.size(self.alpha)  # Add alpha parameters if trainable
 
         return int(params)
 
@@ -133,191 +155,68 @@ class Rough:
             self.lower_output[batch_index] = np.min(concat_out, axis=1).reshape((-1, 1))
 
             # Final output is a blend of upper and lower outputs, weighted by alpha
-            self.final_output[batch_index] = self.alpha * self.upper_output[batch_index] + (1 - self.alpha) * self.lower_output[batch_index]
+            self.final_output[batch_index] = self.blending_factor * self.upper_output[batch_index] + (1 - self.blending_factor) * self.lower_output[batch_index]
 
         # Return final output, reshaped to match (batch_size, output_size)
         return self.final_output[:input.shape[0]].reshape((-1, self.output_size))
 
     #################################################################
 
-    def Adam_init(self):
-        """
-        Initializes the moment estimates for the Adam optimizer (mt and vt).
-        """
-        self.upper_weight_mt = np.zeros(self.upper_weight.shape)  # Moment estimates for upper weights
-        self.lower_weight_mt = np.zeros(self.lower_weight.shape)  # Moment estimates for lower weights
-        self.upper_weight_vt = np.zeros(self.upper_weight.shape)  # Velocity estimates for upper weights
-        self.lower_weight_vt = np.zeros(self.lower_weight.shape)  # Velocity estimates for lower weights
-        self.t = 0  # Time step counter for Adam updates
-
-        # Initialize bias moments if applicable
-        if self.use_bias:
-            self.upper_bias_mt = np.zeros(self.upper_bias.shape)
-            self.lower_bias_mt = np.zeros(self.lower_bias.shape)
-            self.upper_bias_vt = np.zeros(self.upper_bias.shape)
-            self.lower_bias_vt = np.zeros(self.lower_bias.shape)
-
-        # Initialize alpha moments if trainable
-        if self.train_alpha:
-            self.alpha_mt = np.zeros(self.alpha.shape)
-            self.alpha_vt = np.zeros(self.alpha.shape)
+    def optimzer_init(self, optimizer='Adam', **kwargs) -> None:
+        self.Optimizer = init_optimizer(self.trainable_params(), method=optimizer, **kwargs)
 
     #################################################################
 
-    def update(self, grad_w_up: np.ndarray, grad_w_low: np.ndarray, grad_bias_up: np.ndarray, grad_bias_low: np.ndarray,
-                grad_alpha: np.ndarray, method: str = 'Adam', learning_rate: float = 1e-3,
-                   bias_learning_rate: float = 2e-4, adam_beta1: float = 0.9, adam_beta2: float = 0.99):
-        """
-        Updates the weights and biases using gradients from backpropagation. Supports Adam optimizer.
-        
-        Parameters:
-        -----------
-        grad_w_up : np.ndarray
-            Gradient for the upper network weights.
-        grad_w_low : np.ndarray
-            Gradient for the lower network weights.
-        grad_bias_up : np.ndarray
-            Gradient for the upper network biases.
-        grad_bias_low : np.ndarray
-            Gradient for the lower network biases.
-        grad_alpha : np.ndarray
-            Gradient for the alpha parameter.
-        method : str, optional
-            Optimization method to use, default is 'Adam'.
-        learning_rate : float, optional
-            Learning rate for the weights, default is 1e-3.
-        bias_learning_rate : float, optional
-            Learning rate for the biases, default is 2e-4.
-        adam_beta1 : float, optional
-            Beta1 parameter for Adam optimizer, default is 0.9.
-        adam_beta2 : float, optional
-            Beta2 parameter for Adam optimizer, default is 0.99.
-        """
-        if method == 'Adam':
-            # Adam optimizer parameters
-            eps = 1e-7
-            self.t += 1  # Increment timestep
-
-            # Update moments for upper and lower weights
-            self.upper_weight_mt = adam_beta1 * self.upper_weight_mt + (1 - adam_beta1) * grad_w_up
-            self.upper_weight_vt = adam_beta2 * self.upper_weight_vt + (1 - adam_beta2) * np.square(grad_w_up)
-
-            self.lower_weight_mt = adam_beta1 * self.lower_weight_mt + (1 - adam_beta1) * grad_w_low
-            self.lower_weight_vt = adam_beta2 * self.lower_weight_vt + (1 - adam_beta2) * np.square(grad_w_low)
-
-            # Bias-corrected moments
-            m_hat_w_up = self.upper_weight_mt / (1 - adam_beta1 ** self.t)
-            v_hat_w_up = self.upper_weight_vt / (1 - adam_beta2 ** self.t)
-
-            m_hat_w_low = self.lower_weight_mt / (1 - adam_beta1 ** self.t)
-            v_hat_w_low = self.lower_weight_vt / (1 - adam_beta2 ** self.t)
-
-            # Compute weight updates
-            delta_w_up = learning_rate * m_hat_w_up / (np.sqrt(v_hat_w_up) + eps)
-            delta_w_low = learning_rate * m_hat_w_low / (np.sqrt(v_hat_w_low) + eps)
-
-            # Update bias if enabled
-            if self.use_bias:
-                self.upper_bias_mt = adam_beta1 * self.upper_bias_mt + (1 - adam_beta1) * grad_bias_up
-                self.upper_bias_vt = adam_beta2 * self.upper_bias_vt + (1 - adam_beta2) * np.square(grad_bias_up)
-
-                self.lower_bias_mt = adam_beta1 * self.lower_bias_mt + (1 - adam_beta1) * grad_bias_low
-                self.lower_bias_vt = adam_beta2 * self.lower_bias_vt + (1 - adam_beta2) * np.square(grad_bias_low)
-
-                m_hat_bias_up = self.upper_bias_mt / (1 - adam_beta1 ** self.t)
-                v_hat_bias_up = self.upper_bias_vt / (1 - adam_beta2 ** self.t)
-
-                m_hat_bias_low = self.lower_bias_mt / (1 - adam_beta1 ** self.t)
-                v_hat_bias_low = self.lower_bias_vt / (1 - adam_beta2 ** self.t)
-
-                delta_bias_up = bias_learning_rate * m_hat_bias_up / (np.sqrt(v_hat_bias_up) + eps)
-                delta_bias_low = bias_learning_rate * m_hat_bias_low / (np.sqrt(v_hat_bias_low) + eps)
-
-            # Update alpha if trainable
-            if self.train_alpha:
-                self.alpha_mt = adam_beta1 * self.alpha_mt + (1 - adam_beta1) * grad_alpha
-                self.alpha_vt = adam_beta2 * self.alpha_vt + (1 - adam_beta2) * np.square(grad_alpha)
-
-                delta_alpha = learning_rate * self.alpha_mt / (np.sqrt(self.alpha_vt) + eps)
-
-        else:
-            # For non-Adam updates, use simple gradient descent
-            delta_w_up = learning_rate * grad_w_up
-            delta_w_low = learning_rate * grad_w_low
-            if self.use_bias:
-                delta_bias_up = bias_learning_rate * grad_bias_up
-                delta_bias_low = bias_learning_rate * grad_bias_low
-            if self.train_alpha:
-                delta_alpha = learning_rate * grad_alpha
-
-        # Apply the updates to weights and biases
-        self.upper_weight -= delta_w_up
-        self.lower_weight -= delta_w_low
-
-        if self.use_bias:
-            self.upper_bias -= delta_bias_up
-            self.lower_bias -= delta_bias_low
-
-        if self.train_alpha:
-            self.alpha -= delta_alpha
+    def update(self, grads: np.ndarray, learning_rate: float = 1e-3) -> None:
+        deltas = self.Optimizer(grads, learning_rate)
+        ind2 = 0
+        if self.train_weights:
+            ind1 = ind2
+            ind2 += int(np.size(self.upper_weight))
+            delta_w = deltas[ind1:ind2].reshape(self.upper_weight.shape)
+            self.upper_weight -= delta_w
+            ind1 = ind2
+            ind2 += int(np.size(self.lower_weight))
+            delta_w = deltas[ind1:ind2].reshape(self.lower_weight.shape)
+            self.lower_weight -= delta_w
+        if self.train_bias:
+            ind1 = ind2
+            ind2 += np.size(self.upper_bias)
+            delta_bias = deltas[ind1:ind2].reshape(self.upper_bias.shape)
+            self.upper_bias -= delta_bias
+            ind1 = ind2
+            ind2 += np.size(self.lower_bias)
+            delta_bias = deltas[ind1:ind2].reshape(self.lower_bias.shape)
+            self.lower_bias -= delta_bias
+        if self.train_blending:
+            ind1 = ind2
+            ind2 += np.size(self.blending_factor)
+            delta_blend = deltas[ind1:ind2].reshape(self.blending_factor.shape)
+            self.blending_factor -= delta_blend
 
     #################################################################
 
-    def backward(self, error_batch: np.ndarray, method: str = 'Adam', 
-                 learning_rate: float = 1e-3, bias_learning_rate: float = 2e-4, 
-                 adam_beta1: float = 0.9, adam_beta2: float = 0.99) -> np.ndarray:
-        """
-        Performs backpropagation on the model, computing gradients for weights, biases, and alpha.
-        
-        Parameters:
-        -----------
-        error_batch : np.ndarray
-            The batch of errors from the loss function.
-        method : str, optional
-            The optimization method to use (default is 'Adam').
-        learning_rate : float, optional
-            Learning rate for the weights (default is 1e-3).
-        bias_learning_rate : float, optional
-            Learning rate for the biases (default is 2e-4).
-        adam_beta1 : float, optional
-            Beta1 parameter for Adam optimizer (default is 0.9).
-        adam_beta2 : float, optional
-            Beta2 parameter for Adam optimizer (default is 0.99).
-        
-        Returns:
-        --------
-        np.ndarray
-            The backpropagated error for the input layer.
-        """
+    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, return_error=False, return_grads=False, modify=True):
+        if return_error:
+            error_in = np.zeros(self.input.shape)  # Initialize error output
 
-        error_out = np.zeros(self.input.shape)  # Initialize error output
-
-        grad_w_up = np.zeros(self.upper_weight.shape)  # Gradient for upper weights
-        grad_w_low = np.zeros(self.lower_weight.shape)  # Gradient for lower weights
-        
-        grad_bias_up = None
-        grad_bias_low = None
-        grad_alpha = None
-
-        # Initialize bias gradients if necessary
-        if self.use_bias:
-            grad_bias_up = np.zeros(self.upper_bias.shape)
-            grad_bias_low = np.zeros(self.lower_bias.shape)
-
-        # Initialize alpha gradient if trainable
-        if self.train_alpha:
-            grad_alpha = np.zeros(self.alpha.shape)
+        # Initialize the gradients for weights and biases
+        grad_w_up = np.zeros(self.upper_weight.shape) if self.train_weights else None
+        grad_w_low = np.zeros(self.lower_weight.shape) if self.train_weights else None
+        grad_bias_up = np.zeros(self.upper_bias.shape) if self.train_bias else None
+        grad_bias_low = np.zeros(self.lower_bias.shape) if self.train_bias else None
+        grad_alpha = np.zeros(self.blending_factor.shape) if self.train_blending else None
 
         # Loop through each batch and compute sensitivities
         for batch_index, one_batch_error in enumerate(error_batch):
             # Compute gradient for alpha
-            if self.train_alpha:
+            if self.train_blending:
                 grad_alpha += one_batch_error.reshape((-1, 1)) * \
                     (self.upper_output[batch_index] - self.lower_output[batch_index])
 
             # Compute upper and lower network errors
-            e_max = self.alpha * one_batch_error.reshape((-1, 1))
-            e_min = (1 - self.alpha) * one_batch_error.reshape((-1, 1))
+            e_max = self.blending_factor * one_batch_error.reshape((-1, 1))
+            e_min = (1 - self.blending_factor) * one_batch_error.reshape((-1, 1))
 
             e_upper = e_max * np.logical_not(self.minmax_reverse_stat[batch_index].reshape((-1, 1))) + \
                       e_min * self.minmax_reverse_stat[batch_index].reshape((-1, 1))
@@ -333,30 +232,48 @@ class Rough:
             sensitivity_low = e_lower.reshape((-1, 1)) * Fprime_low
 
             # Compute gradients for weights and biases
-            grad_w_up += np.outer(sensitivity_up.ravel(), self.input[batch_index].ravel())
-            grad_w_low += np.outer(sensitivity_low.ravel(), self.input[batch_index].ravel())
+            if self.train_weights:
+                grad_w_up += np.outer(sensitivity_up.ravel(), self.input[batch_index].ravel())
+                grad_w_low += np.outer(sensitivity_low.ravel(), self.input[batch_index].ravel())
 
-            if self.use_bias:
+            if self.train_bias:
                 grad_bias_up += sensitivity_up
                 grad_bias_low += sensitivity_low
 
             # Propagate error back to previous layer
-            error_out[batch_index] = np.ravel(self.upper_weight.T @ sensitivity_up + self.lower_weight.T @ sensitivity_low)
+            if return_error:
+                error_in[batch_index] = np.ravel(self.upper_weight.T @ sensitivity_up + self.lower_weight.T @ sensitivity_low)
 
         # Normalize gradients
-        grad_w_up /= error_batch.shape[0]
-        grad_w_low /= error_batch.shape[0]
+        if self.train_weights:
+            grad_w_up /= error_batch.shape[0]
+            grad_w_low /= error_batch.shape[0]
 
         if self.use_bias:
             grad_bias_up /= error_batch.shape[0]
             grad_bias_low /= error_batch.shape[0]
 
-        if self.train_alpha:
+        if self.train_blending:
             grad_alpha /= error_batch.shape[0]
 
-        # Update model parameters based on gradients
-        self.update(grad_w_up, grad_w_low, grad_bias_up, grad_bias_low, grad_alpha,
-                    method=method, learning_rate=learning_rate,
-                    bias_learning_rate=bias_learning_rate, adam_beta1=adam_beta1, adam_beta2=adam_beta2)
+        # Update the parameters using the computed gradients
+        grads = None if (grad_w_up is None) and (grad_bias_up is None) else np.array([]).reshape((-1,1))
+        if grads is not None:
+            if grad_w_up is not None:
+                grads = np.concatenate((grads, grad_w_up.reshape((-1,1))))
+                grads = np.concatenate((grads, grad_w_low.reshape((-1,1))))
+            if grad_bias_up is not None:
+                grads = np.concatenate((grads, grad_bias_up.reshape((-1,1))))
+                grads = np.concatenate((grads, grad_bias_low.reshape((-1,1))))
+            if grad_alpha is not None:
+                grads = np.concatenate((grads, grad_alpha.reshape((-1,1))))
+        if modify:
+            self.update(grads, learning_rate=learning_rate)
 
-        return error_out
+        # Return parameters gradients and gradient with respect to input if needed
+        if return_error and return_grads:
+            return {'error_in': error_in, 'gradients': grads}
+        elif return_error:
+            return error_in
+        elif return_grads:
+            return grads

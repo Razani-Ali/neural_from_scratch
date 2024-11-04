@@ -1,10 +1,12 @@
 import numpy as np
 from activations.activation_functions import net2out, net2Fprime
 from initializers.weight_initializer import Dense_weight_init
+from optimizers.set_optimizer import init_optimizer
 
 
 class Dense:
-    def __init__(self, input_size: int, output_size: int, use_bias: bool = True, batch_size: int = 32, 
+    def __init__(self, input_size: int, output_size: int, use_bias: bool = True, train_bias: bool = True,
+                 train_weights: bool = True, batch_size: int = 32, 
                  activation: str = 'relu', alpha: float = None, weights_init_method: str = 'he', 
                  weight_distribution: str = 'normal', orthogonal_scale_factor: float = 1.0, 
                  weights_uniform_range: tuple = None):
@@ -15,6 +17,8 @@ class Dense:
         input_size (int): Number of input neurons.
         output_size (int): Number of output neurons.
         use_bias (bool): Whether to use bias in the layer. Default is True.
+        train_bias (bool): Whether to train bias if use_bias or not
+        train_weights (bool): Whether to train weights or not
         batch_size (int): Batch size for processing. Default is 32.
         activation (str): Activation function to use. Default is 'relu'.
         alpha (float, optional): Parameter for activation functions like Leaky ReLU and ELU. Default is None.
@@ -27,6 +31,8 @@ class Dense:
         self.input_size = input_size
         self.batch_size = batch_size
         self.use_bias = use_bias
+        self.train_bias = False if use_bias is False else train_bias
+        self.train_weights = train_weights
         self.activation = activation
         self.alpha_activation = alpha  # Alpha value for Leaky ReLU and ELU activation functions
 
@@ -52,10 +58,26 @@ class Dense:
         Returns:
         int: Total number of trainable parameters (weights and biases).
         """
+        params = 0
+        if self.train_bias:
+            params += np.size(self.bias)
+        if self.train_weights:
+            params += np.size(self.weight)
+        return params
+    
+    #################################################################
+
+    def all_params(self) -> int:
+        """
+        Returns the number of trainable and non trainable parameters in the layer.
+        
+        Returns:
+        int: Total number of all parameters (weights and biases).
+        """
+        params = np.size(self.weight)
         if self.use_bias:
-            return np.size(self.weight) + np.size(self.bias)
-        else:
-            return np.size(self.weight)
+            params += np.size(self.bias)
+        return params
 
     #################################################################
 
@@ -89,106 +111,36 @@ class Dense:
         return self.output[:input.shape[0]].reshape((-1, self.output_size))
 
     #################################################################
-
-    def Adam_init(self):
-        """
-        Initializes parameters for the Adam optimizer.
-        """
-        # Initialize first moment vector (mt) and second moment vector (vt) for weights
-        self.weight_mt = np.zeros(self.weight.shape)
-        self.weight_vt = np.zeros(self.weight.shape)
-        self.t = 0  # Time step counter
-
-        if self.use_bias:
-            # Initialize first and second moment vectors for bias if bias is used
-            self.bias_mt = np.zeros(self.bias.shape)
-            self.bias_vt = np.zeros(self.bias.shape)
+    
+    def optimzer_init(self, optimizer='Adam', **kwargs) -> None:
+        self.Optimizer = init_optimizer(self.trainable_params(), method=optimizer, **kwargs)
 
     #################################################################
 
-    def update(self, grad_w: np.ndarray, grad_bias: np.ndarray, method: str = 'Adam', learning_rate: float = 1e-3,
-               bias_learning_rate: float = 2e-4, adam_beta1: float = 0.9, adam_beta2: float = 0.99):
-        """
-        Updates the weights and biases using the specified optimization method.
-
-        Parameters:
-        grad_w (np.ndarray): Gradient of the loss with respect to the weights.
-        grad_bias (np.ndarray): Gradient of the loss with respect to the biases.
-        method (str): Optimization method ('Adam' or 'SGD'). Default is 'Adam'.
-        learning_rate (float): Learning rate for weights. Default is 1e-3.
-        bias_learning_rate (float): Learning rate for biases. Default is 2e-4.
-        adam_beta1 (float): Exponential decay rate for the first moment estimates. Default is 0.9.
-        adam_beta2 (float): Exponential decay rate for the second moment estimates. Default is 0.99.
-        """
-        if method == 'Adam':
-            eps = 1e-7  # Small constant to prevent division by zero
-
-            # Update first moment estimate for weights
-            self.weight_mt = adam_beta1 * self.weight_mt + (1 - adam_beta1) * grad_w
-            # Update second moment estimate for weights
-            self.weight_vt = adam_beta2 * self.weight_vt + (1 - adam_beta2) * np.square(grad_w)
-            self.t += 1  # Increment time step
-
-            # Compute bias-corrected first moment estimate
-            m_hat_w = self.weight_mt / (1 - adam_beta1 ** self.t)
-            # Compute bias-corrected second moment estimate
-            v_hat_w = self.weight_vt / (1 - adam_beta2 ** self.t)
-
-            # Compute update for weights
-            delta_w = learning_rate * m_hat_w / (np.sqrt(v_hat_w) + eps)
-
-            if self.use_bias:
-                # Update first moment estimate for biases
-                self.bias_mt = adam_beta1 * self.bias_mt + (1 - adam_beta1) * grad_bias
-                # Update second moment estimate for biases
-                self.bias_vt = adam_beta2 * self.bias_vt + (1 - adam_beta2) * np.square(grad_bias)
-
-                # Compute bias-corrected first moment estimate for biases
-                m_hat_bias = self.bias_mt / (1 - adam_beta1 ** self.t)
-                # Compute bias-corrected second moment estimate for biases
-                v_hat_bias = self.bias_vt / (1 - adam_beta2 ** self.t)
-
-                # Compute update for biases
-                delta_bias = bias_learning_rate * m_hat_bias / (np.sqrt(v_hat_bias) + eps)
-        else:
-            # For SGD, the update is simply the learning rate times the gradient
-            delta_w = learning_rate * grad_w
-            if self.use_bias:
-                delta_bias = bias_learning_rate * grad_bias
-
-        # Apply the updates to weights and biases
-        self.weight -= delta_w
-        if self.use_bias:
+    def update(self, grads: np.ndarray, learning_rate: float = 1e-3) -> None:
+        deltas = self.Optimizer(grads, learning_rate)
+        ind2 = 0
+        if self.train_weights:
+            ind1 = ind2
+            ind2 += int(np.size(self.weight))
+            delta_w = deltas[ind1:ind2].reshape(self.weight.shape)
+            self.weight -= delta_w
+        if self.train_bias:
+            ind1 = ind2
+            ind2 += np.size(self.bias)
+            delta_bias = deltas[ind1:ind2].reshape(self.bias.shape)
             self.bias -= delta_bias
 
     #################################################################
 
-    def backward(self, error_batch: np.ndarray, method: str = 'Adam', 
-                 learning_rate: float = 1e-3, bias_learning_rate: float = 2e-4, 
-                 adam_beta1: float = 0.9, adam_beta2: float = 0.99) -> np.ndarray:
-        """
-        Performs a backward pass and updates the weights and biases.
-
-        Parameters:
-        error_batch (np.ndarray): Error gradients from the next layer.
-        method (str): Optimization method ('Adam' or 'SGD'). Default is 'Adam'.
-        learning_rate (float): Learning rate for weights. Default is 1e-3.
-        bias_learning_rate (float): Learning rate for biases. Default is 2e-4.
-        adam_beta1 (float): Exponential decay rate for the first moment estimates. Default is 0.9.
-        adam_beta2 (float): Exponential decay rate for the second moment estimates. Default is 0.99.
-
-        Returns:
-        np.ndarray: Gradients of the error with respect to the input.
-        """
-
+    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, return_error=False, return_grads=False, modify=True):
         # Initialize the output error gradients array
-        error_out = np.zeros(self.input.shape)
+        if return_error:
+            error_in = np.zeros(self.input.shape)
 
         # Initialize the gradients for weights and biases
-        grad_w = np.zeros(self.weight.shape)
-        grad_bias = None
-        if self.use_bias:
-            grad_bias = np.zeros(self.bias.shape)
+        grad_w = np.zeros(self.weight.shape) if self.train_weights else None
+        grad_bias = np.zeros(self.bias.shape) if self.train_bias else None
 
         # Process each error vector in the batch
         for batch_index, one_batch_error in enumerate(error_batch):
@@ -200,20 +152,35 @@ class Dense:
                 sensitivity = one_batch_error.reshape((-1, 1)) * Fprime
 
             # Accumulate the gradient for weights
-            grad_w += np.outer(sensitivity.ravel(), self.input[batch_index].ravel())
-            if self.use_bias:
+            if self.train_weights:
+                grad_w += np.outer(sensitivity.ravel(), self.input[batch_index].ravel())
+            if self.train_bias:
                 grad_bias += sensitivity
 
             # Compute the error gradient with respect to the input
-            error_out[batch_index] = np.ravel(self.weight.T @ sensitivity)
+            if return_error:
+                error_in[batch_index] = np.ravel(self.weight.T @ sensitivity)
 
         # Average the gradients over the batch
-        grad_w /= error_batch.shape[0]
-        if self.use_bias:
+        if self.train_weights:
+            grad_w /= error_batch.shape[0]
+        if self.train_bias:
             grad_bias /= error_batch.shape[0]
+            
+        # Update the parameters using the computed gradients
+        grads = None if (grad_w is None) and (grad_bias is None) else np.array([]).reshape((-1,1))
+        if grads is not None:
+            if grad_w is not None:
+                grads = np.concatenate((grads, grad_w.reshape((-1,1))))
+            if grad_bias is not None:
+                grads = np.concatenate((grads, grad_bias.reshape((-1,1))))
+        if modify:
+            self.update(grads, learning_rate=learning_rate)
 
-        # Update the weights and biases using the computed gradients
-        self.update(grad_w, grad_bias, method=method, learning_rate=learning_rate,
-                bias_learning_rate=bias_learning_rate, adam_beta1=adam_beta1, adam_beta2=adam_beta2)
-
-        return error_out
+        # Return parameters gradients and gradient with respect to input if needed
+        if return_error and return_grads:
+            return {'error_in': error_in, 'gradients': grads}
+        elif return_error:
+            return error_in
+        elif return_grads:
+            return grads

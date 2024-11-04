@@ -1,5 +1,6 @@
 import numpy as np
 from initializers.weight_initializer import RBF_weight_init
+from optimizers.set_optimizer import init_optimizer
 
 
 class RBF:
@@ -91,6 +92,19 @@ class RBF:
         if self.train_var:
             params += np.size(self.var)
         return params
+    
+    #################################################################
+
+    def all_params(self) -> int:
+        """
+        Calculate the number of parameters (centers and variances).
+
+        Returns:
+        --------
+        int:
+            The total number of parameters.
+        """
+        return np.size(self.center) + np.size(self.var)
 
     #################################################################
 
@@ -133,114 +147,36 @@ class RBF:
         return self.output[:input.shape[0]].reshape((-1, self.output_size))
 
     #################################################################
-
-    def Adam_init(self):
-        """
-        Initialize the Adam optimizer's moment vectors.
-        """
-        self.t = 0  # Time step for Adam optimizer
-
-        if self.train_center:
-            self.center_mt = np.zeros(self.center.shape)  # First moment (mean) for centers
-            self.center_vt = np.zeros(self.center.shape)  # Second moment (variance) for centers
-
-        if self.train_var:
-            self.var_mt = np.zeros(self.var.shape)  # First moment (mean) for variances
-            self.var_vt = np.zeros(self.var.shape)  # Second moment (variance) for variances
+    
+    def optimzer_init(self, optimizer='Adam', **kwargs) -> None:
+        self.Optimizer = init_optimizer(self.trainable_params(), method=optimizer, **kwargs)
 
     #################################################################
 
-    def update(self, grad_cen: np.ndarray, grad_var: np.ndarray, method: str = 'Adam', learning_rate: float = 1e-3,
-               var_learning_rate: float = 2e-4, adam_beta1: float = 0.9, adam_beta2: float = 0.99):
-        """
-        Update the RBF parameters (centers and variances) using the selected optimizer.
-
-        Parameters:
-        -----------
-        grad_cen : np.ndarray
-            Gradient of the loss with respect to the centers.
-        grad_var : np.ndarray
-            Gradient of the loss with respect to the variances.
-        method : str, optional
-            Optimization method ('Adam' or 'SGD') (default is 'Adam').
-        learning_rate : float, optional
-            Learning rate for center updates (default is 1e-3).
-        var_learning_rate : float, optional
-            Learning rate for variance updates (default is 2e-4).
-        adam_beta1 : float, optional
-            Beta1 parameter for Adam optimizer (default is 0.9).
-        adam_beta2 : float, optional
-            Beta2 parameter for Adam optimizer (default is 0.99).
-        """
-
-        if method == 'Adam':
-            eps = 1e-7
-            self.t += 1  # Increment time step
-
-            if self.train_center:
-                # Adam update for centers
-                self.center_mt = adam_beta1 * self.center_mt + (1 - adam_beta1) * grad_cen
-                self.center_vt = adam_beta2 * self.center_vt + (1 - adam_beta2) * np.square(grad_cen)
-                m_hat_cen = self.center_mt / (1 - adam_beta1 ** self.t)
-                v_hat_cen = self.center_vt / (1 - adam_beta2 ** self.t)
-                delta_cen = learning_rate * m_hat_cen / (np.sqrt(v_hat_cen) + eps)
-
-            if self.train_var:
-                # Adam update for variances
-                self.var_mt = adam_beta1 * self.var_mt + (1 - adam_beta1) * grad_var
-                self.var_vt = adam_beta2 * self.var_vt + (1 - adam_beta2) * np.square(grad_var)
-                m_hat_var = self.var_mt / (1 - adam_beta1 ** self.t)
-                v_hat_var = self.var_vt / (1 - adam_beta2 ** self.t)
-                delta_var = var_learning_rate * m_hat_var / (np.sqrt(v_hat_var) + eps)
-        else:
-            # SGD update
-            delta_cen = learning_rate * grad_cen
-            if self.train_var:
-                delta_var = var_learning_rate * grad_var
-
-        # Update parameters
+    def update(self, grads: np.ndarray, learning_rate: float = 1e-3) -> None:
+        deltas = self.Optimizer(grads, learning_rate)
+        ind2 = 0
         if self.train_center:
-            self.center -= delta_cen
+            ind1 = ind2
+            ind2 += int(np.size(self.center))
+            delta_center = deltas[ind1:ind2].reshape(self.center.shape)
+            self.center -= delta_center
         if self.train_var:
+            ind1 = ind2
+            ind2 += np.size(self.var)
+            delta_var = deltas[ind1:ind2].reshape(self.var.shape)
             self.var -= delta_var
 
     #################################################################
 
-    def backward(self, error_batch: np.ndarray, method: str = 'Adam', 
-                 learning_rate: float = 1e-3, var_learning_rate: float = 2e-4, 
-                 adam_beta1: float = 0.9, adam_beta2: float = 0.99) -> np.ndarray:
-        """
-        Backpropagate the error through the RBF layer.
-
-        Parameters:
-        -----------
-        error_batch : np.ndarray
-            The error signal for the current batch.
-        method : str, optional
-            The optimization method ('Adam' or 'SGD') (default is 'Adam').
-        learning_rate : float, optional
-            Learning rate for centers (default is 1e-3).
-        var_learning_rate : float, optional
-            Learning rate for variances (default is 2e-4).
-        adam_beta1 : float, optional
-            Beta1 parameter for Adam optimizer (default is 0.9).
-        adam_beta2 : float, optional
-            Beta2 parameter for Adam optimizer (default is 0.99).
-
-        Returns:
-        --------
-        np.ndarray:
-            Gradient of the error with respect to the input.
-        """
-
+    def backward(self, error_batch: np.ndarray, learning_rate: float = 1e-3, return_error=False, return_grads=False, modify=True):
         # Initialize arrays for output error and gradients
-        error_out = np.zeros(self.input.shape)
-        grad_cen = None
-        if self.train_center:
-            grad_cen = np.zeros(self.center.shape)
-        grad_var = None
-        if self.train_var:
-            grad_var = np.zeros(self.var.shape)
+        if return_error:
+            error_in = np.zeros(self.input.shape)
+        
+        # Initialize the gradients for weights and biases
+        grad_cen = np.zeros(self.center.shape) if self.train_center else None
+        grad_var = np.zeros(self.var.shape) if self.train_var else None
 
         # Iterate over each batch and calculate gradients
         for batch_index, one_batch_error in enumerate(error_batch):
@@ -256,9 +192,10 @@ class RBF:
                     self.var.ravel() ** -3 * self.output[batch_index].ravel()).reshape((-1, 1))
             
             # Error backpropagated to the input
-            error_x = (one_batch_error.ravel() * self.output[batch_index].ravel() * self.var.ravel() ** -2).reshape((-1, 1))
-            error_out[batch_index] = (np.ones((self.input_size, self.output_size)) @ error_x).ravel() *\
-                (np.sum(2 * self.center, axis=0).ravel() - 4 * self.input[batch_index].ravel())
+            if return_error:
+                error_x = (one_batch_error.ravel() * self.output[batch_index].ravel() * self.var.ravel() ** -2).reshape((-1, 1))
+                error_in[batch_index] = (np.ones((self.input_size, self.output_size)) @ error_x).ravel() *\
+                    (np.sum(2 * self.center, axis=0).ravel() - 4 * self.input[batch_index].ravel())
 
         # Normalize gradients by batch size
         if self.train_center:
@@ -266,8 +203,20 @@ class RBF:
         if self.train_var:
             grad_var /= error_batch.shape[0]
 
-        # Update parameters using the chosen optimization method
-        self.update(grad_cen, grad_var, method=method, learning_rate=learning_rate,
-                var_learning_rate=var_learning_rate, adam_beta1=adam_beta1, adam_beta2=adam_beta2)
+        # Update the parameters using the computed gradients
+        grads = None if (grad_cen is None) and (grad_var is None) else np.array([]).reshape((-1,1))
+        if grads is not None:
+            if grad_cen is not None:
+                grads = np.concatenate((grads, grad_cen.reshape((-1,1))))
+            if grad_var is not None:
+                grads = np.concatenate((grads, grad_var.reshape((-1,1))))
+        if modify:
+            self.update(grads, learning_rate=learning_rate)
 
-        return error_out
+        # Return parameters gradients and gradient with respect to input if needed
+        if return_error and return_grads:
+            return {'error_in': error_in, 'gradients': grads}
+        elif return_error:
+            return error_in
+        elif return_grads:
+            return grads

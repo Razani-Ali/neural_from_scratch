@@ -59,13 +59,36 @@ class compile:
         
         # Return the total count of trainable parameters
         return int(params)
+    
+    #################################################################
+
+    def all_params(self) -> int:
+        """
+        Calculates the total number of parameters in the compiled model.
+
+        This method iterates over all the layers in the model and sums up the number 
+        of parameters from each layer.
+
+        Returns:
+        int: The total number of parameters in the model.
+        """
+    
+        # Initialize a variable to keep track of the total number of parameters.
+        params = 0
+
+        # Iterate through each layer in the model
+        for layer in self.model:
+            # Add the number of parameters from each layer
+            params += layer.all_params()
+        
+        # Return the total count of trainable parameters
+        return int(params)
 
 
     #################################################################
 
-    def backward(self, input: np.ndarray, targets: np.ndarray, Loss_function, method: str = 'Adam', 
-                 learning_rate: float = 1e-3, bias_learning_rate: float = 1e-3, shuffle: bool = True, 
-                 adam_beta1: float = 0.9, adam_beta2: float = 0.99):
+    def backward(self, input: np.ndarray, targets: np.ndarray, Loss_function, batch_size: int = 8,
+                 learning_rate: float = 1e-3, shuffle: bool = True) -> None:
         """
         Perform the backpropagation step to update the model's weights.
 
@@ -77,18 +100,12 @@ class compile:
             The ground truth labels corresponding to the input data.
         Loss_function : object
             The loss function object that computes both the forward and backward pass of the loss.
-        method : str, optional
-            The optimization method to be used ('Adam' or 'SGD') (default is 'Adam').
+        batch_size : int, optional
+            Training batch_size
         learning_rate : float, optional
             Learning rate for updating weights (default is 1e-3).
-        bias_learning_rate : float, optional
-            Learning rate for updating biases (default is 1e-3).
         shuffle : bool, optionaal
             Shuffle data before training process
-        adam_beta1 : float, optional
-            The beta1 parameter for the Adam optimizer (default is 0.9).
-        adam_beta2 : float, optional
-            The beta2 parameter for the Adam optimizer (default is 0.99).
         """
         # Reshape input to ensure compatibility with the model's input size
         input = input.reshape(-1, self.model[0].input_size)
@@ -98,13 +115,14 @@ class compile:
             input = input[random_indices]
             targets = targets[random_indices]
         # Determine how many batches are needed based on batch size
-        batch_num = int(np.ceil(input.shape[0] // self.model[0].batch_size))
+        batch_num = int(np.ceil(input.shape[0] // batch_size))
 
         # Iterate over each batch
-        for i in range(batch_num + 1):
+        for i in range(batch_num):
             # Extract the current batch of input data and corresponding targets
-            data_X = input[i * self.model[0].batch_size: (i + 1) * self.model[0].batch_size].copy()
-            data_Y = targets[i * self.model[0].batch_size: (i + 1) * self.model[0].batch_size].copy()
+            data_X = input[i * batch_size: (i + 1) * batch_size].copy()
+            data_Y = targets[i * batch_size: (i + 1) * batch_size].copy()
+
             
             # Perform forward pass to get the output
             out = self(data_X)
@@ -114,23 +132,15 @@ class compile:
 
             # Perform backpropagation on each layer, starting from the last layer
             for layer in reversed(self.model):
-                if isinstance(layer, RBF):
-                    # Special case for RBF layers, which may have different parameters
-                    error = layer.backward(error, method=method, 
-                                           learning_rate=learning_rate, var_learning_rate=bias_learning_rate, 
-                                           adam_beta1=adam_beta1, adam_beta2=adam_beta2)
+                if layer == self.model[0]:
+                    layer.backward(error, learning_rate=learning_rate, return_error=True)
                 else:
-                    # Standard backpropagation for non-RBF layers
-                    error = layer.backward(error, method=method, 
-                                           learning_rate=learning_rate, bias_learning_rate=bias_learning_rate, 
-                                           adam_beta1=adam_beta1, adam_beta2=adam_beta2)
+                    error = layer.backward(error, learning_rate=learning_rate, return_error=True)
 
     #################################################################
 
-    def fit(self, X_train: np.ndarray, X_val: np.ndarray, Y_train: np.ndarray, Y_val: np.ndarray, 
-            Loss_function, epoch: int = 15, method: str = 'Adam', learning_rate: float = 1e-3, 
-            bias_learning_rate: float = 1e-3, adam_beta1: float = 0.9, adam_beta2: float = 0.99,
-            classes: list = None, **kwargs) -> dict:
+    def fit(self, X_train: np.ndarray, X_val: np.ndarray, Y_train: np.ndarray, Y_val: np.ndarray, Loss_function,
+            batch_size: int = 8, epoch: int = 15, method: str = 'Adam', learning_rate: float = 1e-3, **kwargs) -> dict:
         """
         Train the model using the provided training and validation data.
 
@@ -146,25 +156,21 @@ class compile:
             Validation ground truth labels.
         Loss_function : object
             The loss function object used to compute loss and gradients.
+        batch_size : int, optional
+            Training batch_size
         epoch : int, optional
             Number of epochs to train (default is 15).
         method : str, optional
             Optimization method (default is 'Adam').
         learning_rate : float, optional
-            Learning rate for weight updates (default is 1e-3).
-        bias_learning_rate : float, optional
-            Learning rate for bias updates (default is 1e-3).
-        adam_beta1 : float, optional
-            Beta1 for Adam optimizer (default is 0.9).
-        adam_beta2 : float, optional
-            Beta2 for Adam optimizer (default is 0.99).
-        classes: list, optional
-            classes to plot confusion matrix accordingly
+            Learning rate for weight updates (default is 1e-3).   
         *kwargs: Additional plotting options:
             - plot_loss (bool): Whether to plot loss curves (default: True).
             - plot_fitting (bool): Whether to plot fitting for regression tasks (default: False).
             - plot_reg (bool): Whether to plot regression results (default: False).
             - plot_confusion (bool): Whether to plot a confusion matrix for classification tasks (default: False).
+            - classes (np.array): Data labels if you want to plot confusion at same time
+            - Hyperparameters for optimizers
 
         Returns:
         --------
@@ -174,24 +180,27 @@ class compile:
         loss_train = []
         loss_val = []
 
-        # Initialize the Adam optimizer for each layer if Adam is the chosen method
-        if method == 'Adam':
+        # Initialize optimizer for each layer if has not been defined yet or has changed
+        if not hasattr(self, 'Optimizer'):
+            self.Optimizer = method
             for layer in self.model:
-                layer.Adam_init()
+                layer.optimzer_init(optimizer=method, **kwargs)
+        if self.Optimizer != method:
+            for layer in self.model:
+                layer.optimzer_init(optimizer=method, **kwargs)
 
         # Placeholder to store the training output
         out_train = None
 
         # Training loop over the specified number of epochs
         for current_epoch in range(epoch):
-            if out_train is None:
-                # Perform the forward pass if it's the first epoch
-                out_train = self(X_train)
+            # if out_train is None:
+            #     # Perform the forward pass if it's the first epoch
+            #     out_train = self(X_train)
             
             # Perform backpropagation
-            self.backward(X_train, Y_train, Loss_function, method=method, 
-                          learning_rate=learning_rate, bias_learning_rate=bias_learning_rate, 
-                          adam_beta1=adam_beta1, adam_beta2=adam_beta2)
+            self.backward(X_train, Y_train, Loss_function,
+                          learning_rate=learning_rate, batch_size=batch_size)
             
             # Compute the output again after weight updates
             out_train = self(X_train)
@@ -205,8 +214,7 @@ class compile:
 
             # Plot the training and validation loss curves
             plot_metrics(epoch, current_epoch+1, loss_train, loss_val,
-                 Y_train, out_train, Y_val, out_val,
-                 classes, **kwargs)
+                 Y_train, out_train, Y_val, out_val, **kwargs)
 
             # Clear the output to update the plot in real-time
             clear_output(wait=True)
@@ -236,7 +244,7 @@ class compile:
         # Determine how many batches are needed based on batch size
         batch_num = int(np.ceil(input.shape[0] / self.model[0].batch_size))
 
-        out = None
+        out = np.zeros((input.shape[0], self.model[-1].output_size))
 
         # Process each batch of data
         for i in range(batch_num):
@@ -247,12 +255,8 @@ class compile:
             # Forward pass through each layer of the model
             for layer in self.model:
                 layer_in = layer(layer_in)
-
-            # Concatenate the output across batches
-            if out is None:
-                out = layer_in
-            else:
-                out = np.concatenate((out, layer_in), axis=0)
+            
+            out[i * self.model[0].batch_size: (i + 1) * self.model[0].batch_size] = layer_in
 
         # Reshape and return the final output
-        return out.reshape(input.shape[0], -1)
+        return out

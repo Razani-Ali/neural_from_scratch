@@ -19,12 +19,12 @@ def plot_metrics(number_of_epochs: int, current_epoch: int, loss_train: list, lo
     predicted_train (np.ndarray): Predicted values for the training set.
     actual_validation (np.ndarray): Ground truth values for the validation set.
     predicted_validation (np.ndarray): Predicted values for the validation set.
-    classes (list, optional): List of class labels, required for confusion matrix plotting (classification tasks).
     **kwargs: Additional plotting options:
         - plot_loss (bool): Whether to plot loss curves (default: True).
         - plot_fitting (bool): Whether to plot fitting for regression tasks (default: False).
         - plot_reg (bool): Whether to plot regression results (default: False).
         - plot_confusion (bool): Whether to plot a confusion matrix for classification tasks (default: False).
+        - classes (list, optional): List of class labels, required for confusion matrix plotting (classification tasks).
 
     Returns:
     None
