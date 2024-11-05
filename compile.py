@@ -5,6 +5,7 @@ from layers.RBF_network import RBF
 from layers.Rough_RBF import Rough_RBF
 from visualizations.plot_metrics import plot_metrics
 from IPython.display import clear_output
+from losses.Emotional import Emotion, Emotion2
 
 
 
@@ -195,7 +196,11 @@ class compile:
             out = self(data_X)
             
             # Calculate the error using the loss function's backward method
-            error = Loss_function.backward(out, data_Y).reshape(-1, self.model[-1].output_size)
+            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
+                _ = Loss_function.forward(out, data_Y)
+                error = Loss_function.backward().reshape(-1, self.model[-1].output_size)
+            else:
+                error = Loss_function.backward(out, data_Y).reshape(-1, self.model[-1].output_size)
 
             # Perform backpropagation on each layer, starting from the last layer
             for layer in reversed(self.model):
@@ -273,11 +278,17 @@ class compile:
             out_train = self(X_train)
 
             # Calculate and store the training loss
-            loss_train.append(Loss_function.forward(out_train, Y_train))
+            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
+                loss_train.append(Loss_function.forward(out_train, Y_train, inference=True))
+            else:
+                loss_train.append(Loss_function.forward(out_train, Y_train))
 
             # Perform validation and calculate validation loss
             out_val = self(X_val)
-            loss_val.append(Loss_function.forward(out_val, Y_val))
+            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
+                loss_val.append(Loss_function.forward(out_val, Y_val, inference=True))
+            else:
+                loss_val.append(Loss_function.forward(out_val, Y_val))
 
             # Plot the training and validation loss curves
             plot_metrics(epoch, current_epoch+1, loss_train, loss_val,
