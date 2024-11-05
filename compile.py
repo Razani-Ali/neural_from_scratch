@@ -2,6 +2,7 @@ import numpy as np
 from layers.Dense_network import Dense
 from layers.Rough_network import Rough
 from layers.RBF_network import RBF
+from layers.Rough_RBF import Rough_RBF
 from visualizations.plot_metrics import plot_metrics
 from IPython.display import clear_output
 
@@ -110,7 +111,11 @@ class compile:
             print(type(layer), end='\n\t')
             
             # Print the activation function used in the current layer
-            print('activation function:', layer.activation, end='\n\t')
+            if isinstance(layer, Rough_RBF) or isinstance(layer, RBF):
+                print('activation function:', 'Guassian kernel', end='\n\t')
+            else:
+                print('activation function:', layer.activation, end='\n\t')
+            # Print batch size of model, input size and neuron numbers
             print('batch size:', layer.batch_size, end='\n\t')
             print('input size:', layer.input_size, end='\n\t')
             print('output size:', layer.output_size, end='\n\t')

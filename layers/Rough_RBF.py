@@ -115,6 +115,8 @@ class Rough_RBF:
         elif var_init_method == 'max':
             self.upper_var = np.max(self.upper_center, axis=1).reshape((-1, 1)) / np.sqrt(2 * output_size)
             self.lower_var = np.max(self.lower_center, axis=1).reshape((-1, 1)) / np.sqrt(2 * output_size)
+        else:
+            raise ValueError('your variance initialization is not supported')
 
         # Prepare output storage arrays for forward pass
         self.upper_net = np.zeros((batch_size, output_size, 1))
@@ -210,7 +212,6 @@ class Rough_RBF:
             self.lower_output[batch_index] = np.min(concat_out, axis=1).reshape((-1, 1))
             self.final_output[batch_index] = self.blending_factor * self.upper_output[batch_index] + \
                                              (1 - self.blending_factor) * self.lower_output[batch_index]
-        print((self.final_output[:input.shape[0]].reshape((-1, self.output_size))).shape)
         return self.final_output[:input.shape[0]].reshape((-1, self.output_size))
 
     #################################################################
