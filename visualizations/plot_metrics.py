@@ -49,22 +49,22 @@ def plot_metrics(number_of_epochs: int, current_epoch: int, loss_train: list, lo
         if plot_fitting and plot_reg:
             # Call regression fitting plot
             train_val_loss_regression_fitting(number_of_epochs, current_epoch, loss_train,
-                                              loss_validation, actual_train, predicted_train,
-                                              actual_validation, predicted_validation)
+                                              loss_validation, actual_train[:,0], predicted_train[:,0],
+                                              actual_validation[:,0], predicted_validation[:,0])
         
         # Case 2: Fitting plot is enabled (but not regression)
         elif plot_fitting and not plot_reg:
             # Call fitting plot for general cases
             train_val_loss_fitting(number_of_epochs, current_epoch, loss_train,
-                                   loss_validation, actual_train, predicted_train,
-                                   actual_validation, predicted_validation)
+                                   loss_validation, actual_train[:,0], predicted_train[:,0],
+                                   actual_validation[:,0], predicted_validation[:,0])
         
         # Case 3: Regression plot is enabled (but not fitting)
         elif plot_reg and not plot_fitting:
             # Call regression plot for a regression problem
             train_val_loss_regression(number_of_epochs, current_epoch, loss_train,
-                                      loss_validation, actual_train, predicted_train,
-                                      actual_validation, predicted_validation)
+                                      loss_validation, actual_train[:,0], predicted_train[:,0],
+                                      actual_validation[:,0], predicted_validation)[:,0]
 
         # Case 4: Confusion matrix for classification
         elif plot_confusion:
