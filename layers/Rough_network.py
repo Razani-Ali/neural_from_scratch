@@ -31,15 +31,23 @@ class Rough:
         A scaling parameter for the activation function (default is None).
     weights_uniform_range : tuple, optional
         The range for initializing weights uniformly (default is (-1, 1)).
+    L2_coe : float, optional
+        L2 regularization coefficient
+    L1_coe : float, optional
+        L1 regularization coefficient
+    
     """
 
     def __init__(self, input_size: int, output_size: int, use_bias: bool = True, batch_size: int = 32,
                  train_weights: bool = True, train_bias: bool = True, train_blending: bool = False,
-                 activation: str = 'sigmoid', alpha_acti: float = None, weights_uniform_range: tuple = (-1, 1)):
+                 activation: str = 'sigmoid', alpha_acti: float = None, weights_uniform_range: tuple = (-1, 1),
+                 L2_coe: float = 0.0, L1_coe: float = 0.0):
 
         self.output_size = output_size  # Number of output neurons
         self.input_size = input_size  # Number of input neurons/features
         self.batch_size = batch_size  # Batch size
+        self.L2_coe = L2_coe  # L2 regularization coefficient
+        self.L1_coe = L1_coe  # L1 regularization coefficient
         self.use_bias = use_bias  # Whether to use bias
         self.activation = activation  # Activation function to use
         self.alpha_activation = alpha_acti  # Alpha activation scaling parameter
@@ -321,7 +329,9 @@ class Rough:
         # Average gradients over batch size
         if self.train_weights:
             grad_w_up /= error_batch.shape[0]
+            grad_w_up += self.L1_coe * np.sign(self.upper_weight) + self.L2_coe * self.upper_weight
             grad_w_low /= error_batch.shape[0]
+            grad_w_low += self.L1_coe * np.sign(self.lower_weight) + self.L2_coe * self.lower_weight
         if self.train_bias:
             grad_bias_up /= error_batch.shape[0]
             grad_bias_low /= error_batch.shape[0]

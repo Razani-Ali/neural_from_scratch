@@ -25,6 +25,8 @@ class flexible_Dense:
     - weight_distribution (str): Distribution of weights ('normal' or 'uniform').
     - orthogonal_scale_factor (float): Scale factor for orthogonal initialization.
     - weights_uniform_range (tuple, optional): Range for uniform weight distribution.
+    - L2_coe (float, optional): L2 regularization coefficient
+    - L1_coe (float, optional): L1 regularization coefficient
 
     Attributes:
     - weight (np.ndarray): Weight matrix of shape (output_size, input_size).
@@ -38,12 +40,14 @@ class flexible_Dense:
     def __init__(self, input_size: int, output_size: int, use_bias: bool = True, batch_size: int = 32, 
                  activation: str = 'leaky_relu', alpha: float = None, lambda_=None,
                  train_weights: bool = True, train_bias: bool = True, train_alpha: bool = True, train_lambda: bool = True,
-                 weights_init_method: str = 'he', 
+                 weights_init_method: str = 'he', L2_coe: float = 0.0, L1_coe: float = 0.0,
                  weight_distribution: str = 'normal', orthogonal_scale_factor: float = 1.0, 
                  weights_uniform_range: tuple = None):
         self.output_size = output_size
         self.input_size = input_size
         self.batch_size = batch_size
+        self.L2_coe = L2_coe
+        self.L1_coe = L1_coe
         self.use_bias = use_bias
         self.activation = activation
         self.train_weights = train_weights
@@ -290,6 +294,7 @@ class flexible_Dense:
         # Average gradients over batch size
         if self.train_weights:
             grad_w /= error_batch.shape[0]
+            grad_w += self.L1_coe * np.sign(self.weight) + self.L2_coe * self.weight
         if self.train_alpha:
             grad_alpha /= error_batch.shape[0]
         if self.train_bias:

@@ -9,7 +9,7 @@ class Dense:
                  train_weights: bool = True, batch_size: int = 32, 
                  activation: str = 'relu', alpha: float = None, weights_init_method: str = 'he', 
                  weight_distribution: str = 'normal', orthogonal_scale_factor: float = 1.0, 
-                 weights_uniform_range: tuple = None):
+                 weights_uniform_range: tuple = None, L2_coe: float = 0.0, L1_coe: float = 0.0):
         """
         Initializes a dense (fully connected) layer.
         
@@ -26,6 +26,8 @@ class Dense:
         weight_distribution (str): Distribution type for weight values ('normal', 'uniform'). Default is 'normal'.
         orthogonal_scale_factor (float): Scaling factor for orthogonal initialization. Default is 1.0.
         weights_uniform_range (tuple, optional): Range (min, max) for uniform weight initialization. Default is None.
+        L2_coe (float, optional): L2 regularization coefficient
+        L1_coe (float, optional): L1 regularization coefficient
         """
         self.output_size = output_size
         self.input_size = input_size
@@ -34,6 +36,8 @@ class Dense:
         self.train_bias = False if use_bias is False else train_bias
         self.train_weights = train_weights
         self.activation = activation
+        self.L2_coe = L2_coe
+        self.L1_coe = L1_coe
         self.alpha_activation = alpha  # Alpha value for Leaky ReLU and ELU activation functions
 
         # Initialize weights using the specified method
@@ -229,6 +233,7 @@ class Dense:
         # Average gradients over the batch if trainable
         if self.train_weights:
             grad_w /= error_batch.shape[0]
+            grad_w += self.L1_coe * np.sign(self.weight) + self.L2_coe * self.weight
         if self.train_bias:
             grad_bias /= error_batch.shape[0]
         
