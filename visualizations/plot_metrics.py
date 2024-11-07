@@ -1,6 +1,7 @@
 import numpy as np
 from visualizations.online_plot import train_val_loss, train_val_loss_fitting, train_val_loss_regression
 from visualizations.online_plot import train_val_loss_regression_fitting, train_val_loss_confusion
+from visualizations.online_plot import train_val_loss_index_confusion, train_val_loss_index
 
 def plot_metrics(number_of_epochs: int, current_epoch: int, loss_train: list, loss_validation: list,
                  actual_train: np.ndarray, predicted_train: np.ndarray, 
@@ -40,6 +41,7 @@ def plot_metrics(number_of_epochs: int, current_epoch: int, loss_train: list, lo
         plot_fitting = kwargs.get('plot_fitting', False)  # Plot fitting (regression) option
         plot_reg = kwargs.get('plot_reg', False)          # Plot regression option
         plot_confusion = kwargs.get('plot_confusion', False)  # Plot confusion matrix for classification
+        plot_index = kwargs.get('plot_index', False)  # Plot labels index for classification
 
         # Check if the problem type is contradictory (cannot be both regression and classification)
         if (plot_fitting or plot_reg) and plot_confusion:
@@ -66,12 +68,27 @@ def plot_metrics(number_of_epochs: int, current_epoch: int, loss_train: list, lo
                                       loss_validation, actual_train[:,0], predicted_train[:,0],
                                       actual_validation[:,0], predicted_validation)[:,0]
 
-        # Case 4: Confusion matrix for classification
-        elif plot_confusion:
+        # Case 4: Confusion matrix and index scatter for classification
+        elif plot_confusion and plot_index:
+            # Call index scatter for classification
+            train_val_loss_index_confusion(actual_train, predicted_train, actual_validation,
+                                     predicted_validation, classes, number_of_epochs,
+                                     current_epoch, loss_train, loss_validation)
+            
+        # Case 5: Confusion matrix for classification
+        elif plot_confusion and not plot_index:
             # Call confusion matrix plotting for classification
             train_val_loss_confusion(number_of_epochs, current_epoch, loss_train,
                                      loss_validation, actual_train, predicted_train,
                                      actual_validation, predicted_validation, classes)
+            
+        # Case 5: Index scatter for classification
+        elif plot_index and not plot_confusion:
+            train_val_loss_index(
+                actual_train, predicted_train,
+                actual_validation, predicted_validation, classes,
+                number_of_epochs, current_epoch,
+                loss_train, loss_validation)
         # Last case: only plot loss curves
         else:
             # Fallback to basic loss plot if no other options are valid

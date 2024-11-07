@@ -538,3 +538,67 @@ def visualize2D_data(features: np.ndarray, targets: np.ndarray, predicted_data: 
     # Adjust layout and display the plot
     plt.tight_layout()
     plt.show()
+
+#############################################################################################################################
+
+def index_plot(y_test_true: np.array, y_test_pred: np.array, class_labels: list, figure_size: tuple = (12, 6)) -> None:
+    """
+    Plots real vs predicted labels for both training and validation data.
+    
+    Supports binary classification (using sigmoid output) and multiclass classification (using softmax output).
+    
+    Args:
+        y_test_true (np.ndarray): True labels for the test data, shape (n_samples,) or (n_samples, n_classes).
+        y_test_pred (np.ndarray): Predicted labels or probabilities for the test data, shape (n_samples,) or (n_samples, n_classes).
+        class_labels (list of str): List of class names (e.g., ["class 1", "class 2"]).
+        figsize (tuple): Figure size, defaulting to (12, 6).
+
+    Returns:
+        None
+    """
+    def convert_predictions_for_binary(predictions):
+        """Convert continuous probabilities to binary class labels (0 or 1)."""
+        return (predictions >= 0.5).astype(int)
+
+    def convert_one_hot(labels):
+        """Convert one-hot encoded labels to class indices."""
+        if labels.ndim == 2:
+            return np.argmax(labels, axis=1)
+        return labels
+    # Determine if binary classification is being used
+    is_binary_classification = y_test_true.shape[1] == 1
+
+    if is_binary_classification:
+        # Convert binary predictions to 0/1 format
+        y_test_pred = convert_predictions_for_binary(y_test_pred)
+        # Flatten the target arrays if necessary
+        y_test_true = y_test_true.flatten()
+    else:
+        # Convert one-hot encoded labels to indices for multi-class classification
+        y_test_true = convert_one_hot(y_test_true)
+        y_test_pred = convert_one_hot(y_test_pred)
+
+    fig, axes = plt.subplots(figsize=figure_size, sharey=True)
+    axes.set_title("Training Data")
+    axes.set_title("Validation Data")
+
+    # Number of samples and classes
+    num_train_samples = len(y_test_true)
+    num_classes = len(class_labels)
+    
+    # Set x-axis and y-axis properties
+    x_train = np.arange(num_train_samples)
+    y_ticks = np.arange(num_classes)
+    
+    # Training Data Plot
+    axes.scatter(x_train, y_test_true, color='blue', marker='o', label="Real Labels", alpha=0.6)
+    axes.scatter(x_train, y_test_pred, color='red', marker='x', label="Predicted Labels", alpha=0.6)
+    axes.set_xlabel("Sample Index")
+    axes.set_ylabel("Class Label")
+    axes.set_yticks(y_ticks)
+    axes.set_yticklabels(class_labels)
+    axes.legend()
+
+    fig.suptitle("Real vs Predicted Labels")
+    plt.tight_layout()
+    plt.show()

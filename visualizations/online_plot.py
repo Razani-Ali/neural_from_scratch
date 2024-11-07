@@ -585,3 +585,204 @@ def train_val_loss_confusion(
     fig.suptitle('Live Loss and Confusion Matrix Plots')
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
+
+#############################################################################################################################
+
+def train_val_loss_index(
+    y_train_true: np.array, y_train_pred: np.array,
+    y_val_true: np.array, y_val_pred: np.array, class_labels: list,
+    number_of_epochs: int, current_epoch: int,
+    loss_train: np.ndarray, loss_validation: np.ndarray,
+    figure_size: tuple = (15, 10)
+) -> None:
+    """
+    Combined function to plot both real vs predicted labels for training and validation data,
+    and training and validation loss over epochs.
+    
+    Supports binary and multiclass classification.
+    """
+    def convert_predictions_for_binary(predictions):
+        return (predictions >= 0.5).astype(int)
+
+    def convert_one_hot(labels):
+        if labels.ndim == 2:
+            return np.argmax(labels, axis=1)
+        return labels
+
+    is_binary_classification = y_train_true.shape[1] == 1
+
+    if is_binary_classification:
+        y_train_pred = convert_predictions_for_binary(y_train_pred)
+        y_val_pred = convert_predictions_for_binary(y_val_pred)
+        y_train_true = y_train_true.flatten()
+        y_val_true = y_val_true.flatten()
+    else:
+        y_train_true = convert_one_hot(y_train_true)
+        y_train_pred = convert_one_hot(y_train_pred)
+        y_val_true = convert_one_hot(y_val_true)
+        y_val_pred = convert_one_hot(y_val_pred)
+
+    fig, axes = plt.subplots(2, 2, figsize=figure_size, gridspec_kw={'height_ratios': [1, 1]})
+
+    # Plot training and validation loss
+    axes[0, 0].plot(range(1, current_epoch + 1), loss_train, color='blue')
+    axes[0, 0].set_yscale('log')
+    axes[0, 0].set_xlabel(f'Epochs ({current_epoch}/{number_of_epochs})')
+    axes[0, 0].set_ylabel('Loss')
+    axes[0, 0].set_title(f'Train Loss, last epoch: {loss_train[-1]:.5f}')
+    axes[0, 0].yaxis.grid(True, which='minor')
+    axes[0, 0].xaxis.grid(False)
+
+    axes[0, 1].plot(range(1, current_epoch + 1), loss_validation, color='orange')
+    axes[0, 1].set_yscale('log')
+    axes[0, 1].set_xlabel(f'Epochs ({current_epoch}/{number_of_epochs})')
+    axes[0, 1].set_ylabel('Loss')
+    axes[0, 1].set_title(f'Validation Loss, last epoch: {loss_validation[-1]:.5f}')
+    axes[0, 1].yaxis.grid(True, which='minor')
+    axes[0, 1].xaxis.grid(False)
+
+    ymin = float(min(min(loss_train), min(loss_validation))) * 0.9
+    ymax = float(max(max(loss_train), max(loss_validation))) * 1.1
+    axes[0, 0].set_ylim(ymin, ymax)
+    axes[0, 1].set_ylim(ymin, ymax)
+
+    # Plot real vs predicted labels for training and validation data
+    num_train_samples = len(y_train_true)
+    num_val_samples = len(y_val_true)
+    num_classes = len(class_labels)
+
+    x_train = np.arange(num_train_samples)
+    x_val = np.arange(num_val_samples)
+    y_ticks = np.arange(num_classes)
+
+    axes[1, 0].scatter(x_train, y_train_true, color='blue', marker='o', label="Real Labels", alpha=0.6)
+    axes[1, 0].scatter(x_train, y_train_pred, color='red', marker='x', label="Predicted Labels", alpha=0.6)
+    axes[1, 0].set_xlabel("Sample Index")
+    axes[1, 0].set_ylabel("Class Label")
+    axes[1, 0].set_yticks(y_ticks)
+    axes[1, 0].set_yticklabels(class_labels)
+    axes[1, 0].set_title("Training Data")
+    axes[1, 0].legend()
+
+    axes[1, 1].scatter(x_val, y_val_true, color='blue', marker='o', label="Real Labels", alpha=0.6)
+    axes[1, 1].scatter(x_val, y_val_pred, color='red', marker='x', label="Predicted Labels", alpha=0.6)
+    axes[1, 1].set_xlabel("Sample Index")
+    axes[1, 1].set_yticks(y_ticks)
+    axes[1, 1].set_yticklabels(class_labels)
+    axes[1, 1].set_title("Validation Data")
+    axes[1, 1].legend()
+
+    fig.suptitle("Live Loss and Index Plots")
+
+    
+    # Adjust spacing to avoid overlap
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.subplots_adjust(hspace=0.3)  # Add more vertical space between subplots
+    plt.show()
+
+#############################################################################################################################
+
+def train_val_loss_index_confusion(
+    y_train_true: np.array, y_train_pred: np.array,
+    y_val_true: np.array, y_val_pred: np.array, class_labels: list,
+    number_of_epochs: int, current_epoch: int,
+    loss_train: np.ndarray, loss_validation: np.ndarray,
+    figure_size: tuple = (12, 8)
+) -> None:
+    """
+    Combines loss curves, index plots for real vs. predicted labels, and confusion matrices for both datasets.
+    """
+    def convert_predictions_for_binary(predictions):
+        return (predictions >= 0.5).astype(int)
+
+    def convert_one_hot(labels):
+        return np.argmax(labels, axis=1) if labels.ndim == 2 else labels
+
+    is_binary_classification = y_train_true.shape[1] == 1
+
+    if is_binary_classification:
+        y_train_pred = convert_predictions_for_binary(y_train_pred).flatten()
+        y_val_pred = convert_predictions_for_binary(y_val_pred).flatten()
+        y_train_true = y_train_true.flatten()
+        y_val_true = y_val_true.flatten()
+    else:
+        y_train_true = convert_one_hot(y_train_true)
+        y_train_pred = convert_one_hot(y_train_pred)
+        y_val_true = convert_one_hot(y_val_true)
+        y_val_pred = convert_one_hot(y_val_pred)
+
+    fig, axs = plt.subplots(3, 2, figsize=figure_size, gridspec_kw={'height_ratios': [1, 1, 2]})
+    fig.suptitle("Training and Validation Loss, Real vs Predicted Labels, and Confusion Matrices", fontsize=16, y=1.02)
+
+    # Plot training and validation loss
+    axs[0, 0].plot(range(1, current_epoch + 1), loss_train, color='blue')
+    axs[0, 0].set_yscale('log')
+    axs[0, 0].set_xlabel(f'Epochs ({current_epoch}/{number_of_epochs})')
+    axs[0, 0].set_ylabel('Loss')
+    axs[0, 0].set_title(f'Train Loss, last epoch: {loss_train[-1]:.5f}')
+    axs[0, 0].yaxis.grid(True, which='minor')
+    axs[0, 0].xaxis.grid(False)
+
+    axs[0, 1].plot(range(1, current_epoch + 1), loss_validation, color='orange')
+    axs[0, 1].set_yscale('log')
+    axs[0, 1].set_xlabel(f'Epochs ({current_epoch}/{number_of_epochs})')
+    axs[0, 1].set_ylabel('Loss')
+    axs[0, 1].set_title(f'Validation Loss, last epoch: {loss_validation[-1]:.5f}')
+    axs[0, 1].yaxis.grid(True, which='minor')
+    axs[0, 1].xaxis.grid(False)
+
+    ymin = float(min(min(loss_train), min(loss_validation))) * 0.9
+    ymax = float(max(max(loss_train), max(loss_validation))) * 1.1
+    axs[0, 0].set_ylim(ymin, ymax)
+    axs[0, 1].set_ylim(ymin, ymax)
+
+    # Plot real vs predicted labels for training and validation data
+    x_train = np.arange(len(y_train_true))
+    x_val = np.arange(len(y_val_true))
+    y_ticks = np.arange(len(class_labels))
+
+    axs[1, 0].scatter(x_train, y_train_true, color='blue', marker='o', label="Real Labels", alpha=0.6)
+    axs[1, 0].scatter(x_train, y_train_pred, color='red', marker='x', label="Predicted Labels", alpha=0.6)
+    axs[1, 0].set_xlabel("Sample Index")
+    axs[1, 0].set_ylabel("Class Label")
+    axs[1, 0].set_yticks(y_ticks)
+    axs[1, 0].set_yticklabels(class_labels)
+    axs[1, 0].set_title("Training Data")
+    axs[1, 0].legend()
+
+    axs[1, 1].scatter(x_val, y_val_true, color='blue', marker='o', label="Real Labels", alpha=0.6)
+    axs[1, 1].scatter(x_val, y_val_pred, color='red', marker='x', label="Predicted Labels", alpha=0.6)
+    axs[1, 1].set_xlabel("Sample Index")
+    axs[1, 1].set_yticks(y_ticks)
+    axs[1, 1].set_yticklabels(class_labels)
+    axs[1, 1].set_title("Validation Data")
+    axs[1, 1].legend()
+
+    # Confusion matrices for training and validation
+    train_cm = confusion_matrix(y_train_true, y_train_pred)
+    val_cm = confusion_matrix(y_val_true, y_val_pred)
+    train_accuracy = accuracy_score(y_train_true, y_train_pred)
+    val_accuracy = accuracy_score(y_val_true, y_val_pred)
+
+    def plot_confusion_matrix(ax, cm, title, accuracy, classes):
+        cm_normalized = cm.astype('float') / (cm.sum(axis=1)[:, np.newaxis] + 1e-12)
+        im = ax.imshow(cm_normalized, interpolation='nearest', cmap=plt.cm.Blues)
+        ax.figure.colorbar(im, ax=ax)
+        ax.set(xticks=np.arange(len(classes)), yticks=np.arange(len(classes)),
+               xticklabels=classes, yticklabels=classes,
+               xlabel='Predicted', ylabel='True', title=f'{title}\nAccuracy: {accuracy * 100:.2f}%')
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                ax.text(j, i, f"{cm[i, j]}\n({cm_normalized[i, j] * 100:.1f}%)",
+                        ha="center", va="center",
+                        color="white" if cm[i, j] > cm.max() / 2 else "black")
+
+    plot_confusion_matrix(axs[2, 0], train_cm, 'Train Confusion Matrix', train_accuracy, class_labels)
+    plot_confusion_matrix(axs[2, 1], val_cm, 'Validation Confusion Matrix', val_accuracy, class_labels)
+
+    fig.suptitle("Live Loss, Index and Confusion Matrix Plots")
+
+    # Adjust layout
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.subplots_adjust(hspace=0.6)  # Add more vertical space between subplots
+    plt.show()
