@@ -12,7 +12,8 @@ def sigmoid(net: np.ndarray) -> np.ndarray:
     np.ndarray: Output array after applying the Sigmoid function.
     """
     # Sigmoid function formula 1 / (1 + exp(-net))
-    return 1 / (1 + np.exp(-net))
+    x = np.clip(-net, -709.0, 709.0)  # To prevent numerical issues
+    return 1 / (1 + np.exp(x))
 
 
 def sigmoid_derivative(net: np.ndarray) -> np.ndarray:

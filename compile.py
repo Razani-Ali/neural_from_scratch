@@ -196,7 +196,7 @@ class compile:
             out = self(data_X)
             
             # Calculate the error using the loss function's backward method
-            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
+            if hasattr(Loss_function, 'memory'):
                 _ = Loss_function.forward(out, data_Y)
                 error = Loss_function.backward().reshape(-1, self.model[-1].output_size)
             else:
@@ -278,17 +278,14 @@ class compile:
             out_train = self(X_train)
 
             # Calculate and store the training loss
-            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
+            if hasattr(Loss_function, 'memory'):
                 loss_train.append(Loss_function.forward(out_train, Y_train, inference=True))
             else:
                 loss_train.append(Loss_function.forward(out_train, Y_train))
 
             # Perform validation and calculate validation loss
             out_val = self(X_val)
-            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
-                loss_val.append(Loss_function.forward(out_val, Y_val, inference=True))
-            else:
-                loss_val.append(Loss_function.forward(out_val, Y_val))
+            loss_val.append(Loss_function.forward(out_val, Y_val, inference=True))
 
             # Plot the training and validation loss curves
             plot_metrics(epoch, current_epoch+1, loss_train, loss_val,
@@ -466,7 +463,7 @@ class compile:
             Y_train = Y_train.reshape(out.shape)
 
             # Compute the error using the provided loss function
-            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
+            if hasattr(Loss_function, 'memory'):
                 error = np.zeros(Y_train.shape)
                 for ind, o in enumerate(out):
                     _ = Loss_function.forward(o, Y_train[ind])
@@ -489,17 +486,11 @@ class compile:
 
             # Forward pass for training data to compute training loss
             out_train = self(X_train)
-            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
-                loss_train.append(Loss_function.forward(out_train, Y_train, inference=True))
-            else:
-                loss_train.append(Loss_function.forward(out_train, Y_train))
+            loss_train.append(Loss_function.forward(out_train, Y_train, inference=True))
 
             # Forward pass for validation data to compute validation loss
             out_val = self(X_val)
-            if isinstance(Loss_function, Emotion) or isinstance(Loss_function, Emotion2):
-                loss_val.append(Loss_function.forward(out_val, Y_val, inference=True))
-            else:
-                loss_val.append(Loss_function.forward(out_val, Y_val))
+            loss_val.append(Loss_function.forward(out_val, Y_val, inference=True))
 
             # Plot training and validation metrics for visual feedback
             plot_metrics(epoch, current_epoch + 1, loss_train, loss_val, Y_train, out_train, Y_val, out_val, **kwargs)

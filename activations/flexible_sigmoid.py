@@ -15,7 +15,8 @@ def flex_sig(a: float, net: float) -> float:
     # Step 1: Compute the flexible sigmoid function
     # The sigmoid is scaled by the absolute value of 'a' and stretched
     # or compressed by the parameter 'net'.
-    return 2 * np.abs(a) / (1 + np.exp(-net * a))
+    x = np.clip(-net * a, -709.0, 709.0)  # To prevent numerical issues
+    return 2 * np.abs(a) / (1 + np.exp(x))
 
 
 def flex_sig_star_derivative(a: float, net: float) -> float:
@@ -31,7 +32,8 @@ def flex_sig_star_derivative(a: float, net: float) -> float:
     float: The derivative of the flexible sigmoid function with respect to 'a'.
     """
     # Step 1: Calculate the standard sigmoid value 'g' using 'net * a'
-    g = 1 / (1 + np.exp(-net * a))
+    x = np.clip(-net * a, -709.0, 709.0)  # To prevent numerical issues
+    g = 1 / (1 + np.exp(x))
     
     # Step 2: Calculate the sign of 'a' (positive, negative, or zero)
     sign_a = np.sign(a)
@@ -59,7 +61,8 @@ def flex_sig_derivative(a: float, net: float) -> float:
     float: The derivative of the flexible sigmoid function with respect to 'net'.
     """
     # Step 1: Calculate the standard sigmoid value 'g' using 'net * a'
-    g = 1 / (1 + np.exp(-net * a))
+    x = np.clip(-net * a, -709.0, 709.0)  # To prevent numerical issues
+    g = 1 / (1 + np.exp(x))
     
     # Step 2: Compute the derivative with respect to 'net'
     # This derivative includes the absolute value of 'a' and a sigmoid factor.

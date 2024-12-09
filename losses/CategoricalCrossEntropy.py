@@ -2,10 +2,10 @@ import numpy as np
 
 
 class Entropy:
-    def __init__(self):
-        pass
+    def __init__(self, eps=1e-7):
+        self.eps = eps
 
-    def forward(predictions: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    def forward(self, predictions: np.ndarray, labels: np.ndarray, **kwargs) -> np.ndarray:
         """
         Compute the categorical cross-entropy loss.
         
@@ -18,10 +18,10 @@ class Entropy:
         """
 
         # Calculating Loss
-        E = np.sum(-labels * np.log(predictions), axis=1)
+        E = np.sum(-labels * np.log(predictions + self.eps), axis=1)
         return np.mean(E)
 
-    def backward(predictions: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    def backward(self, predictions: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """
         Compute the gradient of the loss with respect to the predictions.
         
@@ -36,4 +36,4 @@ class Entropy:
         # Handling incosistent shapes
         
         # Gradient of the loss with respect to the predictions
-        return -(labels / (predictions + 1e-12))
+        return -(labels / (predictions + self.eps))

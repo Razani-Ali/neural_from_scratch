@@ -5,7 +5,7 @@ class MSE:
     def __init__(self):
         pass
 
-    def forward(predictions, labels):
+    def forward(self, predictions, labels, **kwargs):
         """
         Compute the Mean Squared Error (MSE) loss.
         
@@ -27,7 +27,7 @@ class MSE:
         loss = 0.5 * np.mean((predictions - labels) ** 2, axis=1)
         return np.mean(loss)
 
-    def backward(predictions, labels):
+    def backward(self, predictions, labels):
         """
         Compute the gradient of the loss with respect to the predictions.
         

@@ -19,7 +19,8 @@ def flex_tanh(a: np.ndarray, net: np.ndarray) -> np.ndarray:
             out[i] = 0.5 * net[i]  # Linear approximation: 0.5 * net
         else:
             # Calculate the flexible tanh activation for larger values of 'a'
-            out[i] = 1 / a[i] * (1 - np.exp(-net[i] * a[i])) / (1 + np.exp(-net[i] * a[i]))
+            x = np.clip(-net[i] * a[i], -709.0, 709.0)  # To prevent numerical issues
+            out[i] = 1 / a[i] * (1 - np.exp(x)) / (1 + np.exp(x))
     return out
 
 
@@ -40,10 +41,11 @@ def flex_tanh_star_derivative(a: np.ndarray, net: np.ndarray) -> np.ndarray:
             out[i] = 0  # Derivative w.r.t 'a' is 0 when 'a' is very small
         else:
             # Calculate the hyperbolic tangent value (flexible tanh)
-            g = (1 - np.exp(-net[i] * a[i])) / (1 + np.exp(-net[i] * a[i]))
+            x = np.clip(-net[i] * a[i], -709.0, 709.0)  # To prevent numerical issues
+            g = (1 - np.exp(x)) / (1 + np.exp(x))
             
             # Compute the derivative of tanh w.r.t 'a'
-            dg_da = (2 * net[i] * np.exp(-net[i] * a[i])) / (1 + np.exp(-net[i] * a[i]))**2
+            dg_da = (2 * net[i] * np.exp(x)) / (1 + np.exp(x))**2
             
             # Derivative calculation
             out[i] = -1 / a[i]**2 * g + 1 / a[i] * dg_da
@@ -67,5 +69,6 @@ def flex_tanh_derivative(a: np.ndarray, net: np.ndarray) -> np.ndarray:
             out[i] = 0.5  # Derivative w.r.t 'net' is 0.5 when 'a' is small (linear approximation)
         else:
             # Derivative of tanh w.r.t net
-            out[i] = 2 * np.exp(-net[i] * a[i]) / (1 + np.exp(-net[i] * a[i]))**2
+            x = np.clip(-net[i] * a[i], -709.0, 709.0)  # To prevent numerical issues
+            out[i] = 2 * np.exp(x) / (1 + np.exp(x))**2
     return out

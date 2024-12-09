@@ -1,11 +1,11 @@
 import numpy as np
 
 
-class Entropy:
-    def __init__(self):
-        pass
+class BEntropy:
+    def __init__(self, eps=1e-7):
+        self.eps = eps
 
-    def forward(predictions: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    def forward(self, predictions: np.ndarray, labels: np.ndarray, **kwargs) -> np.ndarray:
         """
         Compute the binary cross-entropy loss.
         
@@ -23,10 +23,10 @@ class Entropy:
             labels = labels.reshape((1, len(labels)))
         
         # Calculate the binary cross-entropy loss for each sample
-        loss = -np.mean(labels * np.log(predictions) + (1 - labels) * np.log(1 - predictions))
+        loss = -np.mean(labels * np.log(predictions + self.eps) + (1 - labels) * np.log(1 - predictions + self.eps))
         return loss
 
-    def backward(predictions: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    def backward(self, predictions: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """
         Compute the gradient of the loss with respect to the predictions.
         
@@ -40,6 +40,6 @@ class Entropy:
             labels = labels.reshape((1, len(labels)))
         
         # Gradient of the loss with respect to the predictions
-        d_predictions = (predictions - labels) / (predictions * (1 - predictions) + 1e-12)
+        d_predictions = (predictions - labels) / (predictions * (1 - predictions) + self.eps)
         return d_predictions
 

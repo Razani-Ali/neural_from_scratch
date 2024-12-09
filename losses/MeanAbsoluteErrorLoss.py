@@ -5,7 +5,7 @@ class MAE:
     def __init__(self):
         pass
 
-    def forward(self, predictions, labels):
+    def forward(self, predictions, labels, **kwargs):
         """
         Compute the Mean Absolute Error (MAE) loss.
         
