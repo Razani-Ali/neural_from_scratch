@@ -11,3 +11,4 @@ from layers.simpleRNN.Elman_Jordan import Elman_Jordan
 from layers.simpleRNN.Jordan import Jordan
 from layers.simpleRNN.TimeDistrbuter import TimeDistributer
 from layers.Reshape import Reshape
+from layers.compile import compile

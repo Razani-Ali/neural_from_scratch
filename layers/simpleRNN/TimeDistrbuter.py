@@ -14,6 +14,29 @@ class TimeDistributer:
     """
 
     def __init__(self, model, batch_size: int = 32):
+        # Validate layer compatibility: Check if each layer's output size matches the next layer's input size
+        for i in range(len(model) - 1):
+            if model[i].output_size != model[i + 1].input_size:
+                raise ValueError(
+                    f"Layer mismatch detected: Layer {i + 1} output size ({model[i].output_size}) "
+                    f"does not match Layer {i + 2} input size ({model[i + 1].input_size})."
+                )
+            
+        # Retrieve the time_steps of the first layer as the reference
+        reference_time_steps = model[0].time_steps
+
+        # Validate time_steps attribute across all layers
+        for index, layer in enumerate(model):
+            if not hasattr(layer, 'time_steps'):
+                raise AttributeError(
+                    f"Layer validation failed at Layer {index+1}: Ensure all the layer are 'Time...' layers with a 'time_steps' attribute."
+                )
+            if layer.time_steps != reference_time_steps:
+                raise ValueError(
+                    f"Inconsistent time_steps: Layer {index + 1} has time_steps={layer.time_steps}, "
+                    f"but expected time_steps={reference_time_steps}. Ensure all layers share the same time_steps."
+                )
+        
         # Store the model layers
         self.model = model
 
@@ -112,7 +135,7 @@ class TimeDistributer:
         print(f'total number of parameters: {total_n_all}', end='\n\t')
         print(f'total number of trainable parameters: {total_n_trainable}', end='\n\t')
         print(f'total number of non trainable parameters: {total_n_all - total_n_trainable}', end='\n\t')
-
+        
     #################################################################
 
     def __call__(self, input: np.ndarray) -> np.ndarray:
@@ -129,9 +152,6 @@ class TimeDistributer:
         np.ndarray
             The final output of the model, reshaped to include time steps.
         """
-        # Reshape the input data
-        input = input.reshape((-1, self.time_steps, self.input_size[1], 1))
-
         # Save the input shape for backward pass
         self.input_shape = input.shape
 
@@ -147,7 +167,7 @@ class TimeDistributer:
             # Iterate through time steps in the sequence
             for seq_index, time_step in enumerate(sequence):
                 # Copy the time step input
-                X = time_step.copy()
+                X = time_step.reshape((-1,1))
 
                 # Pass the input through each layer in the model
                 for layer in self.model:
@@ -248,11 +268,11 @@ class TimeDistributer:
 
                 # Backpropagate through the layers in reverse order
                 for layer in reversed(self.model):
-                    E = layer.backward(batch_index, seq_index, E)
+                    E = layer.backward(batch_index, seq_index, E).reshape((-1,1))
 
                 # Store the propagated error if requested
                 if return_error:
-                    error_in[batch_index, seq_index] = E.reshape((-1, 1))
+                    error_in[batch_index, seq_index] = E.ravel()
 
         # If gradients are requested, accumulate them from all layers
         if return_grads:

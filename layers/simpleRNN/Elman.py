@@ -17,8 +17,45 @@ class Elman:
     return_states : bool, optional
         If True, returns all intermediate states; otherwise, only the final output is returned (default is False).
     """
-
     def __init__(self, model, batch_size: int = 32, stateful: bool = False, return_states: bool = False):
+        # Validate layer compatibility: Check if each layer's output size matches the next layer's input size
+        for i in range(len(model) - 1):
+            if model[i].output_size != model[i + 1].input_size:
+                raise ValueError(
+                    f"Layer mismatch detected: Layer {i + 1} output size ({model[i].output_size}) "
+                    f"does not match Layer {i + 2} input size ({model[i + 1].input_size})."
+                )
+            
+        # Retrieve the time_steps of the first layer as the reference
+        reference_time_steps = model[0].time_steps
+
+        # Validate time_steps attribute across all layers
+        for index, layer in enumerate(model):
+            if not hasattr(layer, 'time_steps'):
+                raise AttributeError(
+                    f"Layer validation failed at Layer {index+1}: Ensure the first layer is a '...1Feedback' and "
+                    f"subsequent layers are 'Time...' layers with a 'time_steps' attribute."
+                )
+            if layer.time_steps != reference_time_steps:
+                raise ValueError(
+                    f"Inconsistent time_steps: Layer {index + 1} has time_steps={layer.time_steps}, "
+                    f"but expected time_steps={reference_time_steps}. Ensure all layers share the same time_steps."
+                )
+
+        # Validate feedback size for Jordan feedback
+        if not hasattr(model[0], 'feedback_size'):
+            raise AttributeError(
+                "Feedback size validation failed: The first layer lacks the 'feedback_size' attribute. "
+                "Ensure only '...1Feedback' layers are used as the first layer."
+            )
+
+        if model[0].feedback_size != model[0].output_size:
+            raise ValueError(
+                f"Feedback size mismatch: The 'feedback_size' of the first layer "
+                f"({model[0].feedback_size}) does not match the 'output_size' of itself "
+                f"({model[0].output_size}). Ensure feedback and output sizes are compatible."
+            )
+            
         self.model = model  # List of model layers
         self.output_size = (model[0].time_steps, model[-1].output_size) if return_states else (1, model[-1].output_size)
         self.input_size = (model[0].time_steps, model[0].input_size)
@@ -109,7 +146,6 @@ class Elman:
         np.ndarray
             The final output or states of the model depending on return_states.
         """
-        input = input.reshape((-1, self.time_steps, self.input_size[1], 1))
         self.input_shape = input.shape  # Save input shape for backward pass
         input_batch_size = input.shape[0]
         if self.batch_size < input_batch_size:
@@ -212,9 +248,7 @@ class Elman:
         dict, np.ndarray, or None
             Depending on the flags, returns propagated errors and/or gradients.
         """
-        if self.return_states:
-            error_batch = error_batch.reshape((-1, self.time_steps, self.model[-1].output_size, 1))
-        else:
+        if not self.return_states:
             error_batch = error_batch.reshape((self.input_shape[0], 1, self.model[-1].output_size, 1))
             zeros = np.zeros((self.input_shape[0], self.time_steps-1, self.model[-1].output_size, 1))
             error_batch = np.concatenate((error_batch, zeros), axis=1)
@@ -228,7 +262,7 @@ class Elman:
         for batch_index in reversed(range(batch_size)):
             time_E = time_E if self.stateful else time_E * 0
             for seq_index in reversed(range(seq_size)):
-                E = error_batch[batch_index, seq_index]
+                E = error_batch[batch_index, seq_index].reshape((-1,1))
                 for layer_index in reversed(range(len(self.model))):
                     layer = self.model[layer_index]
                     if layer_index == 0:
@@ -240,7 +274,7 @@ class Elman:
                         # Compute gradients and error for subsequent layers
                         E = layer.backward(batch_index, seq_index, E)
                 if return_error:
-                    error_in[batch_index, seq_index] = E.reshape((-1, 1))
+                    error_in[batch_index, seq_index] = E.ravel()
 
         if return_grads:
             grads = None if self.trainable_params() == 0 else np.array([]).reshape((-1, 1))
