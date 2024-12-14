@@ -311,15 +311,21 @@ class compile:
         # Placeholder to store the training output
         out_train = None
 
+        # Calculate loss of random model for learning rate schedulers
+        out_train = self(X_train)
+        initial_loss_train = Loss_function.forward(out_train, Y_train, inference=True)
+
         # Training loop over the specified number of epochs
         for current_epoch in range(epoch):
-            # if out_train is None:
-            #     # Perform the forward pass if it's the first epoch
-            #     out_train = self(X_train)
+            # Learning rate strategy
+            if isinstance(learning_rate, (int, float)):
+                lr = learning_rate
+            else:
+                lr = learning_rate(epoch, loss_train[-1] if loss_train else initial_loss_train)
             
             # Perform backpropagation
             self.backward(X_train, Y_train, Loss_function,
-                          learning_rate=learning_rate, batch_size=batch_size)
+                          learning_rate=lr, batch_size=batch_size)
             
             # Compute the output again after weight updates
             out_train = self(X_train)
@@ -545,8 +551,18 @@ class compile:
         loss_train = []
         loss_val = []
 
+        # Calculate loss of random model for learning rate schedulers
+        out_train = self(X_train)
+        initial_loss_train = Loss_function.forward(out_train, Y_train, inference=True)
+
         # Training loop for the specified number of epochs
         for current_epoch in range(epoch):
+            # Learning rate strategy
+            if isinstance(learning_rate, (int, float)):
+                lr = learning_rate
+            else:
+                lr = learning_rate(epoch, loss_train[-1] if loss_train else initial_loss_train)
+
             # Adjust the damping parameter `gamma` based on recent training loss
             if current_epoch >= 2:
                 if loss_train[-1] >= loss_train[-2]:
@@ -581,7 +597,7 @@ class compile:
             for layer in self.model:
                 ind1 = ind2
                 ind2 += layer.trainable_params()
-                layer.update(new_grads[ind1:ind2].reshape((-1, 1)), learning_rate)
+                layer.update(new_grads[ind1:ind2].reshape((-1, 1)), lr)
 
             # Forward pass for training data to compute training loss
             out_train = self(X_train)
@@ -654,6 +670,10 @@ class compile:
         loss_train = []
         loss_val = []
 
+        # Calculate loss of random model for learning rate schedulers
+        out_train = self(X_train)
+        initial_loss_train = Loss_function.forward(out_train, Y_train, inference=True)
+
         # Ensure the optimizer for each layer is set to SGD
         for layer in self.model:
             layer.optimizer_init('SGD')
@@ -663,6 +683,12 @@ class compile:
 
         # Loop through each training epoch
         for current_epoch in range(epoch):
+            # Learning rate strategy
+            if isinstance(learning_rate, (int, float)):
+                lr = learning_rate
+            else:
+                lr = learning_rate(epoch, loss_train[-1] if loss_train else initial_loss_train)
+
             # Iterate through each sample in the training data
             for i in range(n_samples):
                 # Extract the current input and target sample
@@ -699,7 +725,7 @@ class compile:
                 for layer in self.model:
                     ind1 = ind2
                     ind2 += layer.trainable_params()
-                    layer.update(new_grads[ind1:ind2].reshape((-1, 1)), learning_rate)
+                    layer.update(new_grads[ind1:ind2].reshape((-1, 1)), lr)
 
             # Compute the training loss for the current epoch
             out_train = self(X_train)
