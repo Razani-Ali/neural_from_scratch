@@ -53,7 +53,7 @@ class FlexibleDense:
         self.train_weights = train_weights
         self.train_alpha = train_alpha
         self.train_bias = False if use_bias is False else train_bias
-        self.train_lambda = False if (activation != 'selu') and (activation != 'elu') else train_lambda
+        self.train_lambda = False if activation not in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else train_lambda
 
         # Initialize weights based on the chosen initialization method and distribution
         self.weight = Dense_weight_init(input_size, output_size, method=weights_init_method, 
@@ -71,7 +71,7 @@ class FlexibleDense:
         
         # Set default lambda values for SELU or ELU activation
         self.lambda_param = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_param = (lambda_ if lambda_ is not None else 1.0) + np.zeros((output_size, 1))
 
         # Initialize pre-activation and output arrays for batch processing
@@ -110,7 +110,7 @@ class FlexibleDense:
         params = np.size(self.alpha) + np.size(self.weight)
         if self.use_bias:
             params += np.size(self.bias)
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             params += np.size(self.lambda_param)
         return params
 
@@ -139,7 +139,8 @@ class FlexibleDense:
             if self.use_bias:
                 self.net[batch_index] += self.bias
             # Apply activation function
-            self.output[batch_index] = net2out(self.net[batch_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param)
+            self.output[batch_index] = net2out(self.net[batch_index], self.activation, alpha=self.alpha,\
+                                               lambda_param=self.lambda_param)
 
         batch_index += 1
         return self.output[:batch_index, :, 0]
@@ -260,7 +261,7 @@ class FlexibleDense:
             if self.train_alpha or self.train_lambda:
                 Fstar = net2Fstar(self.net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
                 # Update alpha and lambda gradients based on activation function
-                if self.activation in ['selu', 'elu']:
+                if isinstance(Fstar, tuple):
                     if self.train_alpha:
                         grad_alpha += one_batch_error * Fstar[0]
                     if self.train_lambda:
@@ -404,7 +405,7 @@ class TimeFlexibleDense:
         self.train_weights = train_weights  # Whether weights are trainable
         self.train_alpha = train_alpha  # Whether alpha parameter is trainable
         self.train_bias = train_bias if use_bias else False  # Train bias only if bias is enabled
-        self.train_lambda = train_lambda if activation in ['selu', 'elu'] else False  # Train lambda only for SELU or ELU
+        self.train_lambda = train_lambda if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else False  # Train lambda only for SELU or ELU
 
         # Initialize weight matrix
         self.weight = Dense_weight_init(
@@ -422,7 +423,7 @@ class TimeFlexibleDense:
             alpha = 0.01 if self.activation == 'leaky_relu' else 1.0
         self.alpha = alpha + np.zeros((output_size, 1))  # Shape alpha as a vector
         self.lambda_param = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_param = (lambda_ if lambda_ is not None else 1.0) + np.zeros((output_size, 1))
 
         # Initialize gradients for trainable parameters
@@ -498,14 +499,8 @@ class TimeFlexibleDense:
         if self.use_bias:
             self.net[batch_index, seq_index] += self.bias
 
-        # Apply the activation function
-        if self.activation in ['selu', 'elu']:
-            self.output[batch_index, seq_index] = net2out(
+        self.output[batch_index, seq_index] = net2out(
                 self.net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
-            )
-        else:
-            self.output[batch_index, seq_index] = net2out(
-                self.net[batch_index, seq_index], self.activation, alpha=self.alpha
             )
 
         return self.output[batch_index, seq_index]
@@ -631,7 +626,7 @@ class TimeFlexibleDense:
         # Compute activation derivative and sensitivity
         if self.train_alpha or self.train_lambda:
             Fstar = net2Fstar(self.net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
-            if self.activation in ['selu', 'elu']:
+            if isinstance(Fstar, tuple):
                 if self.train_alpha:
                     self.grad_alpha += error.reshape((-1, 1)) * Fstar[0]
                 if self.train_lambda:
@@ -745,7 +740,7 @@ class FlexibleDense1Feedback:
         self.train_weights = train_weights
         self.train_alpha = train_alpha
         self.train_bias = train_bias if use_bias else False
-        self.train_lambda = train_lambda if activation in ['selu', 'elu'] else False
+        self.train_lambda = train_lambda if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else False
 
         # Initialize input-to-output weights
         self.weight = Dense_weight_init(
@@ -772,7 +767,7 @@ class FlexibleDense1Feedback:
 
         # Initialize lambda parameter for SELU or ELU activation
         self.lambda_param = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_param = (lambda_ if lambda_ is not None else 1.0) + np.zeros((output_size, 1))
 
         # Initialize gradients for trainable parameters
@@ -854,13 +849,8 @@ class FlexibleDense1Feedback:
             self.net[batch_index, seq_index] += self.bias
 
         # Apply the activation function
-        if self.activation in ['selu', 'elu']:
-            self.output[batch_index, seq_index] = net2out(
+        self.output[batch_index, seq_index] = net2out(
                 self.net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
-            )
-        else:
-            self.output[batch_index, seq_index] = net2out(
-                self.net[batch_index, seq_index], self.activation, alpha=self.alpha
             )
 
         return self.output[batch_index, seq_index]
@@ -986,6 +976,16 @@ class FlexibleDense1Feedback:
         Returns:
             tuple[np.ndarray, np.ndarray]: Errors propagated to the input and feedback state.
         """
+        if self.train_alpha or self.train_lambda:
+            Fstar = net2Fstar(self.net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
+            if isinstance(Fstar, tuple):
+                if self.train_alpha:
+                    self.grad_alpha += error.reshape((-1, 1)) * Fstar[0]
+                if self.train_lambda:
+                    self.grad_lambda += error.reshape((-1, 1)) * Fstar[1]
+            else:
+                if self.train_alpha:
+                    self.grad_alpha += error.reshape((-1, 1)) * Fstar
         # Compute activation derivative
         Fprime = net2Fprime(self.net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 
@@ -1093,7 +1093,7 @@ class FlexibleDense2Feedback:
         self.train_weights = train_weights
         self.train_bias = train_bias if use_bias else False
         self.train_alpha = train_alpha
-        self.train_lambda = train_lambda if activation in ['selu', 'elu'] else False
+        self.train_lambda = train_lambda if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else False
         self.L2_coe = L2_coe
         self.L1_coe = L1_coe
 
@@ -1114,7 +1114,8 @@ class FlexibleDense2Feedback:
 
         # Initialize alpha and lambda parameters
         self.alpha = np.full((output_size, 1), 0.01 if alpha is None else alpha)
-        self.lambda_param = np.full((output_size, 1), 1.0 if lambda_ is None else lambda_) if activation in ['selu', 'elu'] else None
+        self.lambda_param = np.full((output_size, 1), 1.0 if lambda_ is None else lambda_)\
+            if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else None
 
         # Initialize gradients
         self.grad_w = np.zeros(self.weight.shape) if self.train_weights else None
@@ -1200,13 +1201,8 @@ class FlexibleDense2Feedback:
             self.net[batch_index, seq_index] += self.bias
 
         # Apply the activation function
-        if self.activation in ['selu', 'elu']:
-            self.output[batch_index, seq_index] = net2out(
+        self.output[batch_index, seq_index] = net2out(
                 self.net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
-            )
-        else:
-            self.output[batch_index, seq_index] = net2out(
-                self.net[batch_index, seq_index], self.activation, alpha=self.alpha
             )
 
         return self.output[batch_index, seq_index]
@@ -1342,6 +1338,16 @@ class FlexibleDense2Feedback:
         Returns:
             tuple[np.ndarray, np.ndarray, np.ndarray]: Errors propagated to the input, Elman state, and Jordan state.
         """
+        if self.train_alpha or self.train_lambda:
+            Fstar = net2Fstar(self.net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
+            if isinstance(Fstar, tuple):
+                if self.train_alpha:
+                    self.grad_alpha += error.reshape((-1, 1)) * Fstar[0]
+                if self.train_lambda:
+                    self.grad_lambda += error.reshape((-1, 1)) * Fstar[1]
+            else:
+                if self.train_alpha:
+                    self.grad_alpha += error.reshape((-1, 1)) * Fstar
         # Compute activation derivative
         Fprime = net2Fprime(self.net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 

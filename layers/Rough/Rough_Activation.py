@@ -90,7 +90,7 @@ class RoughActivation:
         self.train_weights = train_weights
         self.train_alpha = train_alpha
         self.train_bias = False if not use_bias else train_bias
-        self.train_lambda = False if activation not in ['selu', 'elu'] else train_lambda
+        self.train_lambda = False if activation not in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else train_lambda
         self.train_blending = train_blending
 
         # Initialize weights
@@ -109,9 +109,9 @@ class RoughActivation:
         
         # Initialize lambda parameters for 'selu' or 'elu'
         self.lambda_upper = (lambda_upper if lambda_upper is not None else 1.0/1.2) + np.zeros((output_size, 1)) if \
-                            activation in ['selu', 'elu'] else None
+                            activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else None
         self.lambda_lower = (lambda_lower if lambda_lower is not None else 1.0/1.2) + np.zeros((output_size, 1)) if \
-                            activation in ['selu', 'elu'] else None
+                            activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else None
 
         # Initialize blending factor
         self.blending_factor = np.full((output_size, 1), 0.5)
@@ -161,7 +161,7 @@ class RoughActivation:
         params = np.size(self.alpha_upper) * 2 + np.size(self.weight) + np.size(self.blending_factor)
         if self.use_bias:
             params += np.size(self.bias)
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             params += np.size(self.lambda_upper) * 2
         return params
 
@@ -386,7 +386,7 @@ class RoughActivation:
                 Fstar_upper = net2Fstar(self.net[batch_index], self.activation, self.alpha_upper, lambda_param=self.lambda_upper)
                 Fstar_lower = net2Fstar(self.net[batch_index], self.activation, self.alpha_lower, lambda_param=self.lambda_lower)
                 # Update alpha and lambda gradients based on activation function
-                if self.activation in ['selu', 'elu']:
+                if isinstance(Fstar_upper, tuple):
                     if self.train_alpha:
                         grad_alpha_upper += e_upper * Fstar_upper[0]
                         grad_alpha_lower += e_lower * Fstar_lower[0]
@@ -542,7 +542,7 @@ class TimeRoughActivation:
         self.train_weights = train_weights  # Flag to allow weight training.
         self.train_alpha = train_alpha  # Flag to allow alpha parameter training.
         self.train_bias = False if not use_bias else train_bias  # Bias training depends on use_bias flag.
-        self.train_lambda = False if activation not in ['selu', 'elu'] else train_lambda  # Lambda training conditional.
+        self.train_lambda = False if activation not in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else train_lambda  # Lambda training conditional.
         self.train_blending = train_blending  # Flag to allow blending factor training.
 
         # Initialize weights
@@ -569,7 +569,7 @@ class TimeRoughActivation:
         self.alpha_lower = np.full((output_size, 1), alpha_lower)
 
         # Initialize lambda parameters for SELU or ELU
-        if activation in ['selu', 'elu']:
+        if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_upper = np.full((output_size, 1), lambda_upper if lambda_upper is not None else 1.0)
             self.lambda_lower = np.full((output_size, 1), lambda_lower if lambda_lower is not None else 1.0)
 
@@ -641,7 +641,7 @@ class TimeRoughActivation:
         if self.use_bias:
             # Add the size of the bias vector if biases are used.
             params += np.size(self.bias)
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             # Add the size of lambda parameters for SELU and ELU activations.
             params += np.size(self.lambda_upper) * 2
         return params
@@ -680,12 +680,8 @@ class TimeRoughActivation:
             self.net[batch_index, seq_index] += self.bias
 
         # Calculate activation outputs for upper and lower parameters.
-        if self.activation in ['selu', 'elu']:
-            up_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_upper, lambda_param=self.lambda_upper)
-            low_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_lower, lambda_param=self.lambda_lower)
-        else:
-            up_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_upper)
-            low_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_lower)
+        up_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_upper, lambda_param=self.lambda_upper)
+        low_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_lower, lambda_param=self.lambda_lower)
 
         # Combine upper and lower outputs to determine min and max values for blending.
         concat_out = np.concatenate((up_out, low_out), axis=1)
@@ -878,7 +874,7 @@ class TimeRoughActivation:
             Fstar_lower = net2Fstar(
                 self.net[batch_index, seq_index], self.activation, self.alpha_lower, lambda_param=self.lambda_lower
             )
-            if self.activation in ['selu', 'elu']:
+            if isinstance(Fstar_upper, tuple):
                 if self.train_alpha:
                     self.grad_alpha_upper += e_upper.reshape((-1, 1)) * Fstar_upper[0]
                     self.grad_alpha_lower += e_lower.reshape((-1, 1)) * Fstar_lower[0]
@@ -987,7 +983,7 @@ class RoughActivation1Feedback:
         self.train_weights = train_weights
         self.train_alpha = train_alpha
         self.train_bias = False if not use_bias else train_bias
-        self.train_lambda = False if activation not in ['selu', 'elu'] else train_lambda
+        self.train_lambda = False if activation not in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else train_lambda
         self.train_blending = train_blending
 
         # Initialize weights for inputs and feedback states.
@@ -1014,7 +1010,7 @@ class RoughActivation1Feedback:
         # Set default lambda values for SELU or ELU activation functions.
         self.lambda_upper = None
         self.lambda_lower = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_upper = (lambda_upper if lambda_upper is not None else 1.0) + np.zeros((output_size, 1))
             self.lambda_lower = (lambda_lower if lambda_lower is not None else 1.0) + np.zeros((output_size, 1))
 
@@ -1102,7 +1098,7 @@ class RoughActivation1Feedback:
             params += np.size(self.bias)
         
         # Add lambda parameters if the activation function requires them.
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             params += np.size(self.lambda_upper) * 2
         
         return params
@@ -1148,12 +1144,8 @@ class RoughActivation1Feedback:
             self.net[batch_index, seq_index] += self.bias
 
         # Compute activation outputs for upper and lower parameters.
-        if self.activation in ['selu', 'elu']:
-            up_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_upper, lambda_param=self.lambda_upper)
-            low_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_lower, lambda_param=self.lambda_lower)
-        else:
-            up_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_upper)
-            low_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_lower)
+        up_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_upper, lambda_param=self.lambda_upper)
+        low_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_lower, lambda_param=self.lambda_lower)
 
         # Concatenate upper and lower outputs to find min and max.
         concat_out = np.concatenate((up_out, low_out), axis=1)
@@ -1403,7 +1395,7 @@ class RoughActivation1Feedback:
             Fstar_lower = net2Fstar(
                 self.net[batch_index, seq_index], self.activation, self.alpha_lower, lambda_param=self.lambda_lower
             )
-            if self.activation in ['selu', 'elu']:
+            if isinstance(Fstar_upper, tuple):
                 if self.train_alpha:
                     self.grad_alpha_upper += e_upper.reshape((-1, 1)) * Fstar_upper[0]
                     self.grad_alpha_lower += e_lower.reshape((-1, 1)) * Fstar_lower[0]
@@ -1534,7 +1526,7 @@ class RoughActivation2Feedback:
         self.train_weights = train_weights  # Whether to train weights.
         self.train_alpha = train_alpha  # Whether to train alpha parameters.
         self.train_bias = False if not use_bias else train_bias  # Bias training depends on use_bias flag.
-        self.train_lambda = False if activation not in ['selu', 'elu'] else train_lambda  # Lambda training depends on activation.
+        self.train_lambda = False if activation not in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else train_lambda  # Lambda training depends on activation.
         self.train_blending = train_blending  # Whether to train blending factors.
 
         # Initialize weights for input, Elman feedback, and Jordan feedback.
@@ -1564,7 +1556,7 @@ class RoughActivation2Feedback:
         # Set default lambda values for SELU or ELU activation functions.
         self.lambda_upper = None
         self.lambda_lower = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_upper = (lambda_upper if lambda_upper is not None else 1.0) + np.zeros((output_size, 1))
             self.lambda_lower = (lambda_lower if lambda_lower is not None else 1.0) + np.zeros((output_size, 1))
 
@@ -1654,7 +1646,7 @@ class RoughActivation2Feedback:
             params += np.size(self.bias)
 
         # Add lambda parameters if activation function requires them.
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             params += np.size(self.lambda_upper) * 2
 
         return params
@@ -1709,22 +1701,18 @@ class RoughActivation2Feedback:
             self.net[batch_index, seq_index] += self.bias
 
         # Compute activation outputs for upper and lower parameters.
-        if self.activation in ['selu', 'elu']:
-            up_out = net2out(
-                self.net[batch_index, seq_index],
-                self.activation,
-                alpha=self.alpha_upper,
-                lambda_param=self.lambda_upper,
-            )
-            low_out = net2out(
-                self.net[batch_index, seq_index],
-                self.activation,
-                alpha=self.alpha_lower,
-                lambda_param=self.lambda_lower,
-            )
-        else:
-            up_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_upper)
-            low_out = net2out(self.net[batch_index, seq_index], self.activation, alpha=self.alpha_lower)
+        up_out = net2out(
+            self.net[batch_index, seq_index],
+            self.activation,
+            alpha=self.alpha_upper,
+            lambda_param=self.lambda_upper,
+        )
+        low_out = net2out(
+            self.net[batch_index, seq_index],
+            self.activation,
+            alpha=self.alpha_lower,
+            lambda_param=self.lambda_lower,
+        )
 
         # Concatenate upper and lower outputs to determine min and max values.
         concat_out = np.concatenate((up_out, low_out), axis=1)
@@ -1986,7 +1974,7 @@ class RoughActivation2Feedback:
             Fstar_lower = net2Fstar(
                 self.net[batch_index, seq_index], self.activation, self.alpha_lower, lambda_param=self.lambda_lower
             )
-            if self.activation in ['selu', 'elu']:
+            if isinstance(Fstar_upper, tuple):
                 if self.train_alpha:
                     self.grad_alpha_upper += e_upper.reshape((-1, 1)) * Fstar_upper[0]
                     self.grad_alpha_lower += e_lower.reshape((-1, 1)) * Fstar_lower[0]

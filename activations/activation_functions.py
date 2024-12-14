@@ -5,6 +5,7 @@ from activations.solid.relu import relu, relu_derivative
 from activations.solid.leaky_Relu import leaky_Relu, leaky_relu_derivative
 from activations.solid.elu import elu, elu_derivative
 from activations.solid.softmax import softmax, softmax_derivative
+from activations.solid.trigonometrics import sine, sine_derivative, cosine, cosine_derivative, sine_plus_cosine, sine_plus_cosine_derivative
 
 
 def net2out(net: np.ndarray, activation_function: str, alpha: float = None) -> np.ndarray:
@@ -37,8 +38,15 @@ def net2out(net: np.ndarray, activation_function: str, alpha: float = None) -> n
         return net.copy()  # Linear activation (identity function)
     elif activation_function == 'softmax':
         return softmax(net)
+    elif activation_function == 'sin':
+        return sine(net)
+    elif activation_function == 'cos':
+        return cosine(net)
+    elif activation_function == 'sin+cos':
+        return sine_plus_cosine(net)
     else:
-        raise ValueError('The activation function is not supported')
+        raise ValueError("The activation function derivative is not supported. supported activation functions are:"
+                         "'leaky_relu', 'elu', 'sigmoid', 'tanh', 'relu', 'linear', 'softmax', 'sin', 'cos' and 'sin+cos'")
       
 
 def net2Fprime(net: np.ndarray, activation_function: str, alpha: float = None) -> np.ndarray:
@@ -71,5 +79,12 @@ def net2Fprime(net: np.ndarray, activation_function: str, alpha: float = None) -
         return np.ones(net.shape)  # Derivative of linear activation is 1
     elif activation_function == 'softmax':
         return softmax_derivative(net)
+    elif activation_function == 'sin':
+        return sine_derivative(net)
+    elif activation_function == 'cos':
+        return cosine_derivative(net)
+    elif activation_function == 'sin+cos':
+        return sine_plus_cosine_derivative(net)
     else:
-        raise ValueError('The activation function derivative is not supported')
+        raise ValueError("The activation function derivative is not supported. supported activation functions are:"
+                         "'leaky_relu', 'elu', 'sigmoid', 'tanh', 'relu', 'linear', 'softmax', 'sin', 'cos' and 'sin+cos'")

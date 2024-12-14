@@ -75,7 +75,7 @@ class FlexibleRough:
         self.train_bias = train_bias if use_bias else False
         self.train_blending = train_blending
         self.train_alpha = train_alpha
-        self.train_lambda = train_lambda if activation in ['selu', 'elu'] else False
+        self.train_lambda = train_lambda if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else False
 
         # Split weight initialization ranges into upper and lower halves
         middle = (weights_uniform_range[0] + weights_uniform_range[1]) / 2
@@ -100,7 +100,7 @@ class FlexibleRough:
         self.alpha = alpha + np.zeros((output_size, 1))
 
         self.lambda_param = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_param = (lambda_ if lambda_ is not None else 1.0) + np.zeros((output_size, 1))
 
         # Used to store min-max reverse operation results
@@ -340,7 +340,7 @@ class FlexibleRough:
                 Fstar_upper = net2Fstar(self.upper_net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
                 Fstar_lower = net2Fstar(self.lower_net[batch_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 
-                if self.activation in ['selu', 'elu']:
+                if isinstance(Fstar_upper, tuple):
                     if self.train_alpha:
                         grad_alpha += e_upper * Fstar_upper[0]
                         grad_alpha += e_lower * Fstar_lower[0]
@@ -557,7 +557,7 @@ class TimeFlexibleRough:
         self.train_bias = False if not use_bias else train_bias  # Only train bias if it's enabled
         self.train_blending = train_blending  # Allow training of blending factors
         self.train_alpha = train_alpha  # Allow training of alpha parameter
-        self.train_lambda = False if activation not in ['selu', 'elu'] else train_lambda  # Lambda applicable only for 'selu' or 'elu'
+        self.train_lambda = False if activation not in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else train_lambda  # Lambda applicable only for 'selu' or 'elu'
 
         # Initialize weight ranges for upper and lower networks
         middle = (weights_uniform_range[0] + weights_uniform_range[1]) / 2  # Midpoint of uniform range
@@ -583,7 +583,7 @@ class TimeFlexibleRough:
 
         # Lambda parameter initialization for activations like 'selu' and 'elu'
         self.lambda_param = None  # Default to None for unsupported activations
-        if activation in ['selu', 'elu']:
+        if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_param = (lambda_ if lambda_ is not None else 1.0) + np.zeros((output_size, 1))
 
         # Network outputs and input storage for forward passes
@@ -644,7 +644,7 @@ class TimeFlexibleRough:
         params += np.size(self.alpha)  # Alpha parameter
         if self.use_bias:
             params += np.size(self.upper_bias) * 2  # Bias for upper and lower networks
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             params += np.size(self.lambda_param)  # Lambda parameter for specific activations
         return params
 
@@ -686,12 +686,8 @@ class TimeFlexibleRough:
             self.lower_net[batch_index, seq_index] += self.lower_bias
 
         # Apply activation functions
-        if self.activation in ['selu', 'elu']:
-            up_out = net2out(self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param)
-            low_out = net2out(self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param)
-        else:
-            up_out = net2out(self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha)
-            low_out = net2out(self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha)
+        up_out = net2out(self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param)
+        low_out = net2out(self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param)
 
         # Compute blending factor
         concat_out = np.concatenate((up_out, low_out), axis=1)
@@ -926,7 +922,7 @@ class TimeFlexibleRough:
             Fstar_lower = net2Fstar(self.lower_net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 
             # Update gradients for alpha and lambda if the activation supports them
-            if self.activation in ['selu', 'elu']:
+            if isinstance(Fstar_upper, tuple):
                 if self.train_alpha:
                     self.grad_alpha += e_upper.reshape((-1, 1)) * Fstar_upper[0]
                     self.grad_alpha += e_lower.reshape((-1, 1)) * Fstar_lower[0]
@@ -1082,7 +1078,7 @@ class FlexibleRough1Feedback:
         self.train_bias = False if use_bias is False else train_bias  # Bias training depends on use_bias.
         self.train_blending = train_blending  # Whether to train blending factor.
         self.train_alpha = train_alpha  # Whether to train alpha parameter.
-        self.train_lambda = False if (activation != 'selu') and (activation != 'elu') else train_lambda
+        self.train_lambda = False if activation not in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else train_lambda
 
         # Compute the midpoint of the uniform initialization range.
         middle = (weights_uniform_range[0] + weights_uniform_range[1]) / 2
@@ -1110,7 +1106,7 @@ class FlexibleRough1Feedback:
 
         # Initialize lambda parameter for specific activation functions.
         self.lambda_param = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_param = (lambda_ if lambda_ is not None else 1.0) + np.zeros((output_size, 1))
 
         # Initialize network outputs for upper and lower networks.
@@ -1219,7 +1215,7 @@ class FlexibleRough1Feedback:
             params += np.size(self.upper_bias) * 2  # Biases for upper and lower networks
 
         # Add the lambda parameter if applicable
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             params += np.size(self.lambda_param)  # Lambda parameter for specific activations
 
         # Return the total number of parameters as an integer
@@ -1270,18 +1266,13 @@ class FlexibleRough1Feedback:
             self.lower_net[batch_index, seq_index] += self.lower_bias
 
         # Apply the activation function to the net inputs of the upper and lower networks.
-        if self.activation in ['selu', 'elu']:
             # Use alpha and lambda parameters for specific activations.
-            up_out = net2out(
-                self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
-            )
-            low_out = net2out(
-                self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
-            )
-        else:
-            # Apply general activation function with alpha.
-            up_out = net2out(self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha)
-            low_out = net2out(self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha)
+        up_out = net2out(
+            self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
+        )
+        low_out = net2out(
+            self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
+        )
 
         # Concatenate the outputs of the upper and lower networks to determine min and max outputs.
         concat_out = np.concatenate((up_out, low_out), axis=1)
@@ -1555,7 +1546,7 @@ class FlexibleRough1Feedback:
             Fstar_upper = net2Fstar(self.upper_net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
             Fstar_lower = net2Fstar(self.lower_net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 
-            if self.activation in ['selu', 'elu']:
+            if isinstance(Fstar_upper, tuple):
                 # Update alpha and lambda gradients for specific activations
                 if self.train_alpha:
                     self.grad_alpha += e_upper.reshape((-1, 1)) * Fstar_upper[0]
@@ -1715,7 +1706,7 @@ class FlexibleRough2Feedback:
         self.train_bias = False if not use_bias else train_bias  # Bias training depends on `use_bias`.
         self.train_blending = train_blending  # Whether to train blending factor.
         self.train_alpha = train_alpha  # Whether to train alpha parameter.
-        self.train_lambda = train_lambda if activation in ['selu', 'elu'] else False  # Lambda training depends on activation.
+        self.train_lambda = train_lambda if activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos'] else False  # Lambda training depends on activation.
 
         # Compute the midpoint of the uniform initialization range.
         middle = (weights_uniform_range[0] + weights_uniform_range[1]) / 2
@@ -1745,7 +1736,7 @@ class FlexibleRough2Feedback:
 
         # Initialize lambda for specific activation functions if required.
         self.lambda_param = None
-        if self.activation in ['selu', 'elu']:
+        if self.activation in ['selu', 'elu', 'sin', 'cos', 'sin+cos']:
             self.lambda_param = (lambda_ if lambda_ is not None else 1.0) + np.zeros((output_size, 1))
 
         # Allocate storage for network outputs and intermediate results.
@@ -1859,7 +1850,7 @@ class FlexibleRough2Feedback:
             params += np.size(self.upper_bias) * 2  # Biases for upper and lower networks
 
         # Add the lambda parameter if applicable
-        if self.activation in ['selu', 'elu']:
+        if self.lambda_param is not None:
             params += np.size(self.lambda_param)  # Lambda parameter for specific activations
 
         # Return the total number of parameters as an integer
@@ -1923,18 +1914,12 @@ class FlexibleRough2Feedback:
             self.lower_net[batch_index, seq_index] += self.lower_bias
 
         # Apply the activation function to the net inputs for the upper and lower networks
-        if self.activation in ['selu', 'elu']:
-            # Use alpha and lambda parameters for specific activations
-            up_out = net2out(
-                self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
-            )
-            low_out = net2out(
-                self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
-            )
-        else:
-            # Apply general activation function with alpha
-            up_out = net2out(self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha)
-            low_out = net2out(self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha)
+        up_out = net2out(
+            self.upper_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
+        )
+        low_out = net2out(
+            self.lower_net[batch_index, seq_index], self.activation, alpha=self.alpha, lambda_param=self.lambda_param
+        )
 
         # Concatenate the outputs of the upper and lower networks to determine min and max values
         concat_out = np.concatenate((up_out, low_out), axis=1)
@@ -2244,7 +2229,7 @@ class FlexibleRough2Feedback:
             Fstar_upper = net2Fstar(self.upper_net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
             Fstar_lower = net2Fstar(self.lower_net[batch_index, seq_index], self.activation, self.alpha, lambda_param=self.lambda_param)
 
-            if self.activation in ['selu', 'elu']:
+            if isinstance(Fstar_upper, tuple):
                 # Update alpha and lambda gradients for specific activations
                 if self.train_alpha:
                     self.grad_alpha += e_upper.reshape((-1, 1)) * Fstar_upper[0]
