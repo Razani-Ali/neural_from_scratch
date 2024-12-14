@@ -1,11 +1,6 @@
 import numpy as np
-from layers.Dense_network import Dense
-from layers.Rough_network import Rough
-from layers.RBF_network import RBF
-from layers.Rough_RBF import Rough_RBF
 from visualizations.plot_metrics import plot_metrics
 from IPython.display import clear_output
-from losses.Emotional import Emotion, Emotion2
 
 
 
@@ -36,6 +31,7 @@ class compile:
         model : list
             A list containing the layers of the model in the order of forward propagation.
         """
+        self.batch_size = min(layer.batch_size for layer in model)
         self.model = model
 
     #################################################################
@@ -112,10 +108,7 @@ class compile:
             print(type(layer), end='\n\t')
             
             # Print the activation function used in the current layer
-            if isinstance(layer, Rough_RBF) or isinstance(layer, RBF):
-                print('activation function:', 'Guassian kernel', end='\n\t')
-            else:
-                print('activation function:', layer.activation, end='\n\t')
+            print('activation function:', layer.activation, end='\n\t')
             # Print batch size of model, input size and neuron numbers
             print('batch size:', layer.batch_size, end='\n\t')
             print('input size:', layer.input_size, end='\n\t')
@@ -176,7 +169,7 @@ class compile:
             Shuffle data before training process
         """
         # Reshape input to ensure compatibility with the model's input size
-        input = input.reshape(-1, self.model[0].input_size)
+        # input = input.reshape(-1, self.model[0].input_size)
         # Shuffle data if needed
         if shuffle:
             random_indices = np.random.permutation(input.shape[0])
@@ -191,16 +184,15 @@ class compile:
             data_X = input[i * batch_size: (i + 1) * batch_size].copy()
             data_Y = targets[i * batch_size: (i + 1) * batch_size].copy()
 
-            
             # Perform forward pass to get the output
             out = self(data_X)
             
             # Calculate the error using the loss function's backward method
             if hasattr(Loss_function, 'memory'):
                 _ = Loss_function.forward(out, data_Y)
-                error = Loss_function.backward().reshape(-1, self.model[-1].output_size)
+                error = Loss_function.backward()
             else:
-                error = Loss_function.backward(out, data_Y).reshape(-1, self.model[-1].output_size)
+                error = Loss_function.backward(out, data_Y)
 
             # Perform backpropagation on each layer, starting from the last layer
             for layer in reversed(self.model):
@@ -278,11 +270,7 @@ class compile:
             out_train = self(X_train)
 
             # Calculate and store the training loss
-            if hasattr(Loss_function, 'memory'):
-                loss_train.append(Loss_function.forward(out_train, Y_train, inference=True))
-            else:
-                loss_train.append(Loss_function.forward(out_train, Y_train))
-
+            loss_train.append(Loss_function.forward(out_train, Y_train, inference=True))
             # Perform validation and calculate validation loss
             out_val = self(X_val)
             loss_val.append(Loss_function.forward(out_val, Y_val, inference=True))
@@ -314,24 +302,26 @@ class compile:
             The output of the model after processing the input.
         """
         # Ensure input is reshaped to match the model's expected input size
-        input = input.reshape((-1, self.model[0].input_size))
+        # input = input.reshape((-1, self.model[0].input_size))
 
         # Determine how many batches are needed based on batch size
-        batch_num = int(np.ceil(input.shape[0] / self.model[0].batch_size))
+        batch_num = int(np.ceil(input.shape[0] / self.batch_size))
 
-        out = np.zeros((input.shape[0], self.model[-1].output_size))
+        shape = (input.shape[0], ) + self.model[-1].output_size if self.model[-1].output_size is tuple\
+            else (input.shape[0], self.model[-1].output_size)
+        out = np.zeros(shape)
 
         # Process each batch of data
         for i in range(batch_num):
             # Get the batch of input data
-            data_X = input[i * self.model[0].batch_size: (i + 1) * self.model[0].batch_size]
+            data_X = input[i * self.batch_size: (i + 1) * self.batch_size]
             layer_in = data_X.copy()
 
             # Forward pass through each layer of the model
             for layer in self.model:
                 layer_in = layer(layer_in)
             
-            out[i * self.model[0].batch_size: (i + 1) * self.model[0].batch_size] = layer_in
+            out[i * self.batch_size: (i + 1) * self.batch_size] = layer_in
 
         # Reshape and return the final output
         return out
@@ -353,6 +343,8 @@ class compile:
             The Jacobian matrix with shape (n_samples * output_size, trainable_params).
             Represents partial derivatives of each output with respect to trainable parameters.
         """
+        if type(self.model[-1].output_size) is not int:
+            raise TypeError('Jaccobian calculations for the last layer is not supported, use reshaping to see what would happen')
         # Initialize an empty Jacobian matrix with shape (total outputs, total trainable parameters)
         jaccob = np.zeros((X_train.shape[0] * self.model[-1].output_size, self.trainable_params()))
 
@@ -376,7 +368,7 @@ class compile:
                         # Get gradients for the first layer without modifying the layer state
                         grads = layer.backward(E_neuron, return_grads=True, modify=False)
                         # Concatenate gradients into the Jacobian row
-                        J_row = np.concatenate((grads.ravel(), J_row))
+                        J_row = np.concatenate((np.ravel(grads), J_row))
                     else:  # For all other layers
                         # Perform backpropagation to get errors and gradients
                         back_out = layer.backward(E_neuron, return_error=True, return_grads=True, modify=False)
@@ -385,7 +377,7 @@ class compile:
                         # Get the gradients for the current layer
                         grads = back_out['gradients']
                         # Concatenate gradients into the Jacobian row
-                        J_row = np.concatenate((grads.ravel(), J_row))
+                        J_row = np.concatenate((np.ravel(grads), J_row))
                 
                 # Update the corresponding row in the Jacobian matrix
                 ind = batch_index * self.model[-1].output_size + out_ind
@@ -438,6 +430,9 @@ class compile:
             A dictionary containing training and validation loss history:
             {'loss_train': list, 'loss_validation': list}
         """
+        if type(self.model[-1].output_size) is not int:
+            raise TypeError('Jaccobian calculations for the last layer is not supported, use reshaping to see what would happen')
+        
         # Initialize each layer's optimizer to SGD to avoid momentum effects (e.g., Adam)
         for layer in self.model:
             layer.optimizer_init('SGD')
@@ -459,17 +454,17 @@ class compile:
             out = self(X_train)
             
             # Reshape training data to match input size
-            X_train = X_train.reshape(-1, self.model[0].input_size)
-            Y_train = Y_train.reshape(out.shape)
+            # X_train = X_train.reshape(-1, self.model[0].input_size)
+            # Y_train = Y_train.reshape(out.shape)
 
             # Compute the error using the provided loss function
             if hasattr(Loss_function, 'memory'):
                 error = np.zeros(Y_train.shape)
                 for ind, o in enumerate(out):
-                    _ = Loss_function.forward(o, Y_train[ind])
-                    error[ind] = Loss_function.backward().reshape(-1, self.model[-1].output_size)
+                    _ = Loss_function.forward(o.reshape((1,-1)), Y_train[ind].reshape((1,-1)))
+                    error[ind] = Loss_function.backward()
             else:
-                error = Loss_function.backward(out, Y_train).reshape(-1, self.model[-1].output_size)
+                error = Loss_function.backward(out, Y_train)
 
             # Compute the Jacobian matrix for the current training data
             J = self.Jaccobian(X_train)

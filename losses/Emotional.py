@@ -67,13 +67,9 @@ class Emotion:
         float
             Computed mean loss if inference is True, otherwise None.
         """
-        # Ensure predictions and labels are 2D arrays
-        if np.ndim(predictions) == 1:
-            predictions = predictions.reshape((1, len(predictions)))
-            labels = labels.reshape((1, len(labels)))
-
-        if np.ndim(labels) == 1:
-            labels = labels.reshape((1, len(labels)))
+        # Handling incosistent shapes
+        if predictions.shape != labels.shape:
+            raise ValueError('input arguments must have same shape, you may need to reshape labels')
 
         # Check that batch size is valid
         if predictions.shape[0] > self.batch_size:
@@ -191,13 +187,9 @@ class Emotion2:
         float
             Computed mean loss if inference is True, otherwise None.
         """
-        # Ensure predictions and labels are 2D arrays
-        if np.ndim(predictions) == 1:
-            predictions = predictions.reshape((1, len(predictions)))
-            labels = labels.reshape((1, len(labels)))
-
-        if np.ndim(labels) == 1:
-            labels = labels.reshape((1, len(labels)))
+        # Handling incosistent shapes
+        if predictions.shape != labels.shape:
+            raise ValueError('input arguments must have same shape, you may need to reshape labels')
 
         # Check that batch size is 1
         if predictions.shape[0] > self.batch_size:

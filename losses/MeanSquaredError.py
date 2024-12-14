@@ -5,7 +5,7 @@ class MSE:
     def __init__(self):
         pass
 
-    def forward(self, predictions, labels, **kwargs):
+    def forward(self, predictions: np.ndarray, labels: np.ndarray, **kwargs) -> np.float64:
         """
         Compute the Mean Squared Error (MSE) loss.
         
@@ -17,17 +17,14 @@ class MSE:
                  The average MSE loss for the batch.
         """
         # Handling incosistent shapes
-        if np.ndim(predictions) == 1:
-            predictions = predictions.reshape((1, len(predictions)))
-            labels = labels.reshape((1, len(labels)))
-        if np.ndim(labels) == 1:
-            labels = labels.reshape((1, len(labels)))
+        if predictions.shape != labels.shape:
+            raise ValueError('input arguments must have same shape, you may need to reshape labels')
         
         # Calculate the mean squared error loss
-        loss = 0.5 * np.mean((predictions - labels) ** 2, axis=1)
-        return np.mean(loss)
+        loss = 0.5 * np.mean(np.square(predictions - labels))
+        return loss
 
-    def backward(self, predictions, labels):
+    def backward(self, predictions: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """
         Compute the gradient of the loss with respect to the predictions.
         
@@ -35,11 +32,8 @@ class MSE:
                  The gradient of the loss with respect to the predictions.
         """
         # Handling incosistent shapes
-        if np.ndim(predictions) == 1:
-            predictions = predictions.reshape((1, len(predictions)))
-            labels = labels.reshape((1, len(labels)))
-        if np.ndim(labels) == 1:
-            labels = labels.reshape((1, len(labels)))
+        if predictions.shape != labels.shape:
+            raise ValueError('input arguments must have same shape, you may need to reshape labels')
         
         # Gradient of the loss with respect to the predictions
         d_predictions = predictions - labels

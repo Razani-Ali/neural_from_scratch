@@ -1,10 +1,10 @@
 import numpy as np
-from activations.sigmoid import sigmoid, sigmoid_derivative
-from activations.tanh import tanh, tanh_derivative
-from activations.relu import relu, relu_derivative
-from activations.leaky_Relu import leaky_Relu, leaky_relu_derivative
-from activations.elu import elu, elu_derivative
-from activations.softmax import softmax, softmax_derivative
+from activations.solid.sigmoid import sigmoid, sigmoid_derivative
+from activations.solid.tanh import tanh, tanh_derivative
+from activations.solid.relu import relu, relu_derivative
+from activations.solid.leaky_Relu import leaky_Relu, leaky_relu_derivative
+from activations.solid.elu import elu, elu_derivative
+from activations.solid.softmax import softmax, softmax_derivative
 
 
 def net2out(net: np.ndarray, activation_function: str, alpha: float = None) -> np.ndarray:

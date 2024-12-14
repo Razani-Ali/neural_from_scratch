@@ -66,7 +66,7 @@ def plot_metrics(number_of_epochs: int, current_epoch: int, loss_train: list, lo
             # Call regression plot for a regression problem
             train_val_loss_regression(number_of_epochs, current_epoch, loss_train,
                                       loss_validation, actual_train[:,0], predicted_train[:,0],
-                                      actual_validation[:,0], predicted_validation)[:,0]
+                                      actual_validation[:,0], predicted_validation[:,0])
 
         # Case 4: Confusion matrix and index scatter for classification
         elif plot_confusion and plot_index:

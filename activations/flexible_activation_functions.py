@@ -1,9 +1,9 @@
 import numpy as np
-from activations.flexible_sigmoid import flex_sig, flex_sig_derivative, flex_sig_star_derivative
-from activations.flexible_tanh import flex_tanh, flex_tanh_derivative, flex_tanh_star_derivative
-from activations.flexible_leaky_relu import flex_leaky_relu, flex_leaky_relu_derivative
-from activations.flexible_leaky_relu import flex_leaky_relu_star_derivative
-from activations.selu import selu, selu_derivative, selu_star_derivative, selu_lambda_derivative
+from activations.flexible.flexible_sigmoid import flex_sig, flex_sig_derivative, flex_sig_star_derivative
+from activations.flexible.flexible_tanh import flex_tanh, flex_tanh_derivative, flex_tanh_star_derivative
+from activations.flexible.flexible_leaky_relu import flex_leaky_relu, flex_leaky_relu_derivative
+from activations.flexible.flexible_leaky_relu import flex_leaky_relu_star_derivative
+from activations.flexible.selu import selu, selu_derivative, selu_star_derivative, selu_lambda_derivative
 
 def net2out(net: np.ndarray, activation_function: str, alpha: float, lambda_param: float = None) -> np.ndarray:
     """
