@@ -1,7 +1,7 @@
 import numpy as np
 from visualizations.plot_metrics import plot_metrics
 from IPython.display import clear_output
-
+from layers.Dropout import Dropout
 
 
 #############################################################################################################################
@@ -33,6 +33,14 @@ class compile:
         """
         # Validate layer compatibility: Check if each layer's output size matches the next layer's input size
         for i in range(len(model) - 1):
+
+            # Set Dropout undefined attributes
+            if isinstance(model[i+1], Dropout):
+                model[i+1].input_size = model[i].output_size
+                model[i+1].output_size = model[i+1].input_size
+                model[i+1].batch_size = np.inf
+
+            # Check for residuals size compability
             if model[i].output_size != model[i + 1].input_size:
                 raise ValueError(
                     f"Layer mismatch detected: Layer {i + 1} output size ({model[i].output_size}) "
