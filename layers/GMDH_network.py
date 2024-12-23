@@ -244,15 +244,16 @@ class GMDH:
 
         # Iterate over each batch sample
         for batch_index, one_batch_error in enumerate(error_batch):
-            one_batch_error = one_batch_error.reshape((-1, 1))
             input_vector = self.input[batch_index]
             adalines_inputs = input_vector[self.input_inds]
 
             # Compute weight gradients
             if self.train_weights:
-                grad_w1, grad_w5 = adalines_inputs[:, 0], adalines_inputs[:, 1]
-                grad_w2, grad_w4 = np.square(adalines_inputs[:, 0]), np.square(adalines_inputs[:, 1])
-                grad_w3 = adalines_inputs[:, 0] * adalines_inputs[:, 1]
+                grad_w1 = adalines_inputs[:, 0] * one_batch_error
+                grad_w5 = adalines_inputs[:, 1] * one_batch_error
+                grad_w2 = np.square(adalines_inputs[:, 0]) * one_batch_error
+                grad_w4 = np.square(adalines_inputs[:, 1]) * one_batch_error
+                grad_w3 = adalines_inputs[:, 0] * adalines_inputs[:, 1] * one_batch_error
                 grad_w += np.concatenate((grad_w1.reshape((-1, 1)),
                                           grad_w2.reshape((-1, 1)),
                                           grad_w3.reshape((-1, 1)),
@@ -261,12 +262,12 @@ class GMDH:
 
             # Compute bias gradients
             if self.train_bias:
-                grad_bias += one_batch_error
+                grad_bias += one_batch_error.reshape((-1,1))
 
             # Compute propagated error for inputs
             if return_error:
-                grad_x1 = self.weight[:, 0] + 2 * self.weight[:, 1] * adalines_inputs[:, 0] + self.weight[:, 2] * adalines_inputs[:, 1]
-                grad_x2 = self.weight[:, 4] + 2 * self.weight[:, 3] * adalines_inputs[:, 1] + self.weight[:, 2] * adalines_inputs[:, 0]
+                grad_x1 = (self.weight[:, 0] + 2 * self.weight[:, 1] * adalines_inputs[:, 0] + self.weight[:, 2] * adalines_inputs[:, 1]) * one_batch_error
+                grad_x2 = (self.weight[:, 4] + 2 * self.weight[:, 3] * adalines_inputs[:, 1] + self.weight[:, 2] * adalines_inputs[:, 0]) * one_batch_error
                 grad_x = np.concatenate((grad_x1.reshape((-1, 1)),
                                          grad_x2.reshape((-1, 1))), axis=1)
                 error_in_batch = np.zeros(self.input_size)
