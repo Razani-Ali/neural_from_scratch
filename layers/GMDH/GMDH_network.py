@@ -155,6 +155,72 @@ class GMDH:
         # Return the computed outputs
         batch_index += 1
         return self.output[:batch_index, :, 0]
+    
+    #################################################################
+
+    def LMS(self, input: np.ndarray, output: np.ndarray) -> None:
+        """
+        Least Mean Squares (LMS) method for fitting GMDH weights and biases.
+
+        This method computes the weights and biases for each output Adaline block
+        using the closed-form solution of the Least Squares regression.
+
+        Parameters:
+        -----------
+        input : np.ndarray
+            Input data array of shape (batch_size, input_size).
+        output : np.ndarray
+            Target output data array of shape (batch_size, output_size).
+
+        Raises:
+        -------
+        ValueError:
+            If the dimensions of `input` or `output` are not compatible with the GMDH model.
+        """
+        # Check if the input has the correct number of dimensions and matches the input size
+        if np.ndim(input) != 2 or input.shape[1] != self.input_size:
+            raise ValueError("Input must be of shape (batch_size, input_size).")
+
+        # Check if the output has the correct number of dimensions and matches the output size
+        if np.ndim(output) != 2 or output.shape[1] != self.output_size:
+            raise ValueError("Output must be of shape (batch_size, output_size).")
+
+        # Ensure that the batch size of input matches the batch size of output
+        if input.shape[0] != output.shape[0]:
+            raise ValueError("Input and output batch sizes must match.")
+
+        # Iterate over each Adaline block (corresponding to each output feature)
+        for i in range(self.output_size):
+            # Get the indices of the two input features associated with the current block
+            index = self.input_inds[i]
+
+            # Extract the corresponding input columns for the current Adaline block
+            z1 = input[:, index[0]].reshape((-1, 1))  # First input feature
+            z2 = input[:, index[1]].reshape((-1, 1))  # Second input feature
+
+            # Get the target output values for the current Adaline block
+            Y = output[:, i].reshape((-1, 1))
+
+            # Construct the design matrix `X` for the GMDH polynomial terms
+            # Columns correspond to: z1, z1^2, z1*z2, z2^2, z2, and a constant (for bias)
+            X = np.concatenate((
+                z1,                      # First-order term z1
+                z1 ** 2,                 # Second-order term z1^2
+                z1 * z2,                 # Interaction term z1*z2
+                z2 ** 2,                 # Second-order term z2^2
+                z2,                      # First-order term z2
+                np.ones(z1.shape)        # Constant term for bias
+            ), axis=1)
+
+            # Compute the optimal weights and bias using the closed-form solution
+            # W = (X^T * X)^(-1) * X^T * Y
+            W = np.ravel(np.linalg.inv(X.T @ X) @ X.T @ Y)
+
+            # Update the weights for the current Adaline block
+            self.weight[i] = W[:-1]  # Exclude the last value (bias)
+
+            # Update the bias for the current Adaline block
+            self.bias[i] = W[-1]  # Extract the last value (bias term)
 
     #################################################################
 

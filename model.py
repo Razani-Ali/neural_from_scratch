@@ -12,5 +12,6 @@ from layers.simpleRNN.Jordan import Jordan
 from layers.simpleRNN.TimeDistrbuter import TimeDistributer
 from layers.Reshape import Reshape
 from layers.compile import compile
-from layers.GMDH_network import GMDH
+from layers.GMDH.GMDH_network import GMDH
+from layers.GMDH.GMDH_Rough import GMDHRough
 from layers.Dropout import Dropout

@@ -1,5 +1,5 @@
 import numpy as np
-from initializers.weight_initializer import RBF_weight_init
+from initializers.weight_initializer import RBF_init
 from optimizers.set_optimizer import init_optimizer
 
 
@@ -26,7 +26,7 @@ class RBF:
     data : np.ndarray, optional
         If 'Kmeans' initialization is used, this is the dataset to fit the K-means (default is None).
     var_init_method : str, optional
-        The method to initialize the variances of the RBF neurons. Options are 'constant', 'average', and 'max' (default is 'average').
+        The method to initialize the variances of the RBF neurons. Options are 'constant', 'random_uniform', 'random_normal', 'mean', 'max', and 'Kmeans' (default is 'max').
     var_init_const : float, optional
         The constant value used to initialize variances if var_init_method is 'constant' (default is 1).
     center_uniform_range : tuple, optional
@@ -48,8 +48,8 @@ class RBF:
     """
     def __init__(self, input_size: int, output_size: int, batch_size: int = 32,
                  center_init_method: str = 'random', train_center: bool = True, train_var: bool = True,
-                 center_distribution: str = 'uniform', data=None, var_init_method='max', var_init_const=1,
-                 center_uniform_range: tuple = (-1,1), center_normal_var: float = 1):
+                 center_distribution: str = 'uniform', data=None, var_init_method='max', var_init_const=1.0,
+                 center_uniform_range: tuple = (-1, 1), center_normal_var: float = 1.0):
 
         # Initialize input/output sizes and training flags
         self.output_size = output_size
@@ -57,20 +57,16 @@ class RBF:
         self.batch_size = batch_size
         self.train_center = train_center
         self.train_var = train_var
-        self.activation = 'Guassian Kernel'
+        self.activation = 'Gaussian Kernel'
 
-        # Initialize centers using RBF_weight_init method
-        self.center = RBF_weight_init(input_size, output_size, method=center_init_method,
-                                      distribution=center_distribution, ranges=center_uniform_range,
-                                      var=center_normal_var, data=data)
-
-        # Initialize variances based on the chosen method
-        if var_init_method == 'constant':
-            self.var = np.zeros(output_size) + var_init_const
-        elif var_init_method == 'average':
-            self.var = np.mean(self.center, axis=1) / output_size
-        elif var_init_method == 'max':
-            self.var = np.max(self.center, axis=1) / np.sqrt(2 * output_size)
+        # Initialize centers and variances using RBF_weight_init
+        self.center, var = RBF_init(
+            input_size, output_size, method=center_init_method,
+            distribution=center_distribution, ranges=center_uniform_range,
+            var=center_normal_var, data=data, var_init_method=var_init_method,
+            var_constant=var_init_const
+        )
+        self.var = var.ravel()
 
         # Initialize intermediate arrays for storing results
         self.net = np.zeros((batch_size, output_size))
@@ -322,13 +318,13 @@ class TimeRBF:
     data : Optional[np.ndarray], optional
         Dataset to fit K-means for center initialization (default is None).
     var_init_method : str, optional
-        Method to initialize variances. Options: 'constant', 'average', 'max' (default is 'max').
+        Method to initialize variances. Options: 'constant', 'random_uniform', 'random_normal', 'mean', 'max', 'Kmeans' (default is 'max').
     var_init_const : float, optional
-        Constant value to initialize variances if `var_init_method` is 'constant' (default is 1).
+        Constant value to initialize variances if `var_init_method` is 'constant' (default is 1.0).
     center_uniform_range : Tuple[float, float], optional
         Range of values for uniform distribution initialization of centers (default is (-1, 1)).
     center_normal_var : float, optional
-        Variance for normal distribution initialization of centers (default is 1).
+        Variance for normal distribution initialization of centers (default is 1.0).
 
     Attributes:
     -----------
@@ -360,9 +356,9 @@ class TimeRBF:
         center_distribution: str = 'uniform',
         data: np.ndarray = None,
         var_init_method: str = 'max',
-        var_init_const: float = 1,
+        var_init_const: float = 1.0,
         center_uniform_range: tuple = (-1, 1),
-        center_normal_var: float = 1
+        center_normal_var: float = 1.0
     ):
         """
         Initializes the TimeRBF class with the provided parameters.
@@ -390,11 +386,11 @@ class TimeRBF:
         var_init_method : str, optional
             Method to initialize variances (default is 'max').
         var_init_const : float, optional
-            Constant value for variance initialization (default is 1).
+            Constant value for variance initialization (default is 1.0).
         center_uniform_range : Tuple[float, float], optional
             Range for uniform distribution initialization of centers (default is (-1, 1)).
         center_normal_var : float, optional
-            Variance for normal distribution initialization of centers (default is 1).
+            Variance for normal distribution initialization of centers (default is 1.0).
         """
         # Input and output dimensions
         self.output_size = output_size  # Number of RBF neurons
@@ -409,25 +405,19 @@ class TimeRBF:
         # Activation function (fixed to Gaussian Kernel for RBF)
         self.activation = 'Gaussian Kernel'
 
-        # Initialize centers using a helper method
-        self.center = RBF_weight_init(
+        # Initialize centers and variances using RBF_weight_init
+        self.center, var = RBF_init(
             input_size, output_size, method=center_init_method,
             distribution=center_distribution, ranges=center_uniform_range,
-            var=center_normal_var, data=data
+            var=center_normal_var, data=data, var_init_method=var_init_method,
+            var_constant=var_init_const
         )
-
-        # Initialize variances using the specified method
-        if var_init_method == 'constant':
-            self.var = np.zeros((output_size, 1)) + var_init_const  # Constant variance
-        elif var_init_method == 'average':
-            self.var = np.mean(self.center, axis=1).reshape((-1, 1)) / output_size  # Average variance
-        elif var_init_method == 'max':
-            self.var = np.max(self.center, axis=1).reshape((-1, 1)) / np.sqrt(2 * output_size)  # Max-based variance
-
+        self.var = var.ravel()
+        
         # Allocate arrays to store intermediate results and inputs
-        self.net = np.zeros((batch_size, time_steps, output_size, 1))  # Net input (distance to centers)
-        self.output = np.zeros((batch_size, time_steps, output_size, 1))  # Output of RBF neurons
-        self.input = np.zeros((batch_size, time_steps, input_size, 1))  # Input data storage
+        self.net = np.zeros((batch_size, time_steps, output_size))  # Net input (distance to centers)
+        self.output = np.zeros((batch_size, time_steps, output_size))  # Output of RBF neurons
+        self.input = np.zeros((batch_size, time_steps, input_size))  # Input data storage
 
         # Initialize gradients for centers and variances
         self.grad_cen = np.zeros(self.center.shape) if self.train_center else None

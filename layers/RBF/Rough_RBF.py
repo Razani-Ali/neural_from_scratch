@@ -1,5 +1,5 @@
 import numpy as np
-from initializers.weight_initializer import RBF_weight_init
+from initializers.weight_initializer import RBF_init
 from optimizers.set_optimizer import init_optimizer
 
 
@@ -23,14 +23,6 @@ class RoughRBF:
         Whether to train the variances of the RBFs (default is True).
     train_blending : bool, optional
         Whether to train the alpha parameter that blends the two networks (default is True).
-    center_init_method : str, optional
-        Method for initializing centers (default is 'random').
-    center_distribution : str, optional
-        Distribution for center initialization if 'random' is chosen (default is 'normal').
-    center_uniform_range : tuple, optional
-        Range for uniform distribution initialization (default is None).
-    center_normal_var : float, optional
-        Variance for normal distribution initialization (default is 1).
 
     Methods:
     --------
@@ -48,10 +40,15 @@ class RoughRBF:
 
     def __init__(self, input_size: int, output_size: int, batch_size: int = 32,
                  train_center: bool = True, train_var: bool = True, data=None,
-                 var_init_method: str = 'max', var_init_const: float = 1.0,
-                 train_blending: bool = True, center_init_method: str = 'random',
+                 train_blending: bool = True, 
+                 center_init_method: str = 'random',
                  center_distribution: str = 'uniform',
-                 center_uniform_range: tuple = (-1, 1), center_normal_var: float = 1.0):
+                 center_uniform_range: tuple = (-1, 1), 
+                 center_normal_var: float = 1.0,
+                 var_init_method: str = 'zeros', 
+                 var_constant: float = 1.0,
+                 lower_center_division_factor: float = 1.0,
+                 lower_var_division_factor: float = 1.0):
 
         """
         Initializes the RBF network with specified parameters and initializations.
@@ -70,12 +67,6 @@ class RoughRBF:
             Whether to allow training of variances (default is True).
         data : np.ndarray, optional
             Data used for K-means initialization if required (default is None).
-        var_init_method : str, optional
-            Method to initialize variances ('average', 'constant', or 'max', default is 'average').
-        var_init_const : float, optional
-            Constant value for variance initialization if 'constant' method is used (default is 1.0).
-        train_blending : bool, optional
-            Whether to train the blend factor alpha (default is True).
         center_init_method : str, optional
             Method to initialize centers (default is 'random').
         center_distribution : str, optional
@@ -84,8 +75,15 @@ class RoughRBF:
             Range for uniform initialization (default is None).
         center_normal_var : float, optional
             Variance for normal initialization (default is 1.0).
+        var_init_method : str, optional
+            Method for variance initialization (default is 'zeros').
+        var_constant : float, optional
+            Constant value for variance initialization (default is 1.0).
+        lower_center_division_factor : float, optional
+            Factor to divide upper centers to get lower centers (default is 2.0).
+        lower_var_division_factor : float, optional
+            Factor to divide upper variances to get lower variances (default is 2.0).
         """
-        
         # Store configuration and initialize centers with helper function
         self.input_size = input_size
         self.output_size = output_size
@@ -93,32 +91,23 @@ class RoughRBF:
         self.train_center = train_center
         self.train_var = train_var
         self.train_blending = train_blending
-        self.activation = 'Guassian Kernel'
-        
-        # Initialize upper and lower network centers
-        self.upper_center = RBF_weight_init(input_size, output_size, method=center_init_method,
-                                            distribution=center_distribution, ranges=center_uniform_range,
-                                            var=center_normal_var, data=data)
-        self.lower_center = RBF_weight_init(input_size, output_size, method=center_init_method,
-                                            distribution=center_distribution, ranges=center_uniform_range,
-                                            var=center_normal_var, data=data)
-        # self.lower_center = self.upper_center + np.random.normal(scale=0.1, size=self.upper_center.shape)
+        self.activation = 'Gaussian Kernel'
+
+        # Initialize upper network centers and variances
+        self.upper_center, upper_var = RBF_init(
+            input_size, output_size, method=center_init_method,
+            distribution=center_distribution, ranges=center_uniform_range,
+            var=center_normal_var, data=data, var_init_method=var_init_method, 
+            var_constant=var_constant
+        )
+        self.upper_var = upper_var.ravel()
+
+        # Initialize lower network centers and variances based on upper network
+        self.lower_center = self.upper_center / lower_center_division_factor
+        self.lower_var = self.upper_var / lower_var_division_factor
 
         # Initialize alpha (blend factor) with a default value of 0.5
         self.blending_factor = np.full((output_size, ), 0.5)
-
-        # Initialize variances based on the chosen method
-        if var_init_method == 'constant':
-            self.upper_var = np.full((output_size, ), var_init_const)
-            self.lower_var = np.full((output_size, ), var_init_const)
-        elif var_init_method == 'average':
-            self.upper_var = np.mean(self.upper_center, axis=1) / output_size
-            self.lower_var = np.mean(self.lower_center, axis=1) / output_size
-        elif var_init_method == 'max':
-            self.upper_var = np.max(self.upper_center, axis=1) / np.sqrt(2 * output_size)
-            self.lower_var = np.max(self.lower_center, axis=1) / np.sqrt(2 * output_size)
-        else:
-            raise ValueError('your variance initialization is not supported')
 
         # Prepare output storage arrays for forward pass
         self.upper_net = np.zeros((batch_size, output_size))
@@ -339,7 +328,6 @@ class RoughRBF:
 
         # Loop through each batch to compute gradients based on error for each output node
         for batch_index, one_batch_error in enumerate(error_batch):
-            one_batch_error = one_batch_error.reshape((-1, 1))
 
             # Calculate gradient for blending factor (alpha) based on the difference in upper and lower outputs
             if self.train_blending:
@@ -496,7 +484,9 @@ class TimeRoughRBF:
                  center_init_method: str = 'random', 
                  center_distribution: str = 'normal', 
                  center_uniform_range: tuple = None, 
-                 center_normal_var: float = 1.0):
+                 center_normal_var: float = 1.0, 
+                 lower_center_div_factor: float = 1.0, 
+                 lower_var_div_factor: float = 1.0):
         """
         Initializes the RBF network with specified parameters and initializations.
 
@@ -530,6 +520,10 @@ class TimeRoughRBF:
             Range for uniform initialization (default is None).
         center_normal_var : float, optional
             Variance for normal initialization (default is 1.0).
+        lower_center_div_factor : float, optional
+            Factor to divide the upper centers to initialize the lower centers (default is 2.0).
+        lower_var_div_factor : float, optional
+            Factor to divide the upper variances to initialize the lower variances (default is 1.5).
         """
         # Configuration
         self.time_steps = time_steps
@@ -541,26 +535,20 @@ class TimeRoughRBF:
         self.train_blending = train_blending
         self.activation = 'Gaussian Kernel'
 
-        # Initialize upper and lower centers
-        self.upper_center = RBF_weight_init(input_size, output_size, method=center_init_method,
-                                            distribution=center_distribution, ranges=center_uniform_range,
-                                            var=center_normal_var, data=data)
-        self.lower_center = RBF_weight_init(input_size, output_size, method=center_init_method,
-                                            distribution=center_distribution, ranges=center_uniform_range,
-                                            var=center_normal_var, data=data)
+        # Initialize upper centers and variances
+        self.upper_center, upper_var = RBF_init(input_size, output_size, 
+                                                     method=center_init_method,
+                                                     distribution=center_distribution, 
+                                                     ranges=center_uniform_range, 
+                                                     var=center_normal_var, 
+                                                     data=data, 
+                                                     var_init_method=var_init_method, 
+                                                     var_constant=var_init_const)
+        self.upper_var = upper_var.ravel()
 
-        # Initialize variances
-        if var_init_method == 'constant':
-            self.upper_var = np.full((output_size, 1), var_init_const)
-            self.lower_var = np.full((output_size, 1), var_init_const)
-        elif var_init_method == 'average':
-            self.upper_var = np.mean(self.upper_center, axis=1).reshape((-1, 1)) / output_size
-            self.lower_var = np.mean(self.lower_center, axis=1).reshape((-1, 1)) / output_size
-        elif var_init_method == 'max':
-            self.upper_var = np.max(self.upper_center, axis=1).reshape((-1, 1)) / np.sqrt(2 * output_size)
-            self.lower_var = np.max(self.lower_center, axis=1).reshape((-1, 1)) / np.sqrt(2 * output_size)
-        else:
-            raise ValueError('Invalid variance initialization method.')
+        # Initialize lower centers and variances
+        self.lower_center = self.upper_center / lower_center_div_factor
+        self.lower_var = self.upper_var / lower_var_div_factor
 
         # Initialize blending factor
         self.blending_factor = np.full((output_size, 1), 0.5)

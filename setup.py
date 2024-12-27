@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="neural_from_scratch",
-    version="0.1.0",
+    version="1.0.0",
     packages=find_packages(include=["sources", "sources.*", "utils", "utils.*"]),
     install_requires=[
         "scikit-learn==1.4.2",
