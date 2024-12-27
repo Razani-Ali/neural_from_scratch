@@ -325,6 +325,14 @@ class compile:
 
         # Training loop over the specified number of epochs
         for current_epoch in range(epoch):
+
+            # Reset memory for correct time backpropagation through time
+            for layer in self.model:
+                try:
+                    layer.reset_memory()
+                except:
+                    pass
+
             # Learning rate strategy
             if isinstance(learning_rate, (int, float)):
                 lr = learning_rate
@@ -459,6 +467,13 @@ class compile:
             raise TypeError('Jaccobian calculations for the last layer is not supported, use reshaping to see what would happen')
         # Initialize an empty Jacobian matrix with shape (total outputs, total trainable parameters)
         jaccob = np.zeros((X_train.shape[0] * self.model[-1].output_size, self.trainable_params()))
+
+        # Reset memory for correct time backpropagation through time
+        for layer in self.model:
+            try:
+                layer.reset_memory()
+            except:
+                pass
 
         # Loop over each training sample
         for batch_index in range(X_train.shape[0]):

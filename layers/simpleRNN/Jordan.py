@@ -71,6 +71,15 @@ class Jordan:
 
     #################################################################
 
+    def reset_memory(self):
+        """
+            Resets the memory states of the network to zero.
+        """
+        self.pervious_batch_state *= 0
+        self.batch_states *= 0
+
+    #################################################################
+
     def trainable_params(self) -> int:
         """
         Compute the total number of trainable parameters across all layers in the model.
